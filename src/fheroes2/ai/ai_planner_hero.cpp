@@ -3219,7 +3219,7 @@ fheroes2::GameMode AI::Planner::HeroesTurn( VecHeroes & heroes, uint32_t & curre
             uint32_t regularMovementDist = _pathfinder.getDistance( bestTargetIndex );
             uint32_t dimensionDoorDist = Route::calculatePathPenalty( dimensionDoorPath );
 
-            if ( shouldUseDimensionDoor( regularMovementDist, dimensionDoorDist ) ) {
+            if ( !_deferHeroMovement && shouldUseDimensionDoor( regularMovementDist, dimensionDoorDist ) ) {
                 while ( shouldUseDimensionDoor( regularMovementDist, dimensionDoorDist ) ) {
                     assert( !dimensionDoorPath.empty() && bestHero->MayStillMove( false, false ) );
 
@@ -3256,10 +3256,20 @@ fheroes2::GameMode AI::Planner::HeroesTurn( VecHeroes & heroes, uint32_t & curre
             else {
                 bestHero->GetPath().setPath( _pathfinder.buildPath( bestTargetIndex, true ) );
 
-                const fheroes2::GameMode gameState = HeroesMove( *bestHero );
-                if ( gameState != fheroes2::GameMode::END_TURN ) {
-                    moreTasksAvailable = false;
-                    return gameState;
+                if ( _deferHeroMovement ) {
+                    // Simultaneous turns: remember the planned route, the hero will walk it together with all other heroes.
+                    if ( bestHero->GetPath().isValidForMovement() ) {
+                        _deferredHeroes.push_back( bestHero );
+                    }
+
+                    availableHeroes.erase( std::remove( availableHeroes.begin(), availableHeroes.end(), bestHero ), availableHeroes.end() );
+                }
+                else {
+                    const fheroes2::GameMode gameState = HeroesMove( *bestHero );
+                    if ( gameState != fheroes2::GameMode::END_TURN ) {
+                        moreTasksAvailable = false;
+                        return gameState;
+                    }
                 }
             }
         }

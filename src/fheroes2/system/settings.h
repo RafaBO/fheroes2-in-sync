@@ -206,6 +206,9 @@ public:
     bool BattleShowMouseShadow() const;
     bool BattleShowMoveShadow() const;
     bool BattleAutoResolve() const;
+
+    // Experimental: all heroes (human and AI) move together after the human players end their turns.
+    bool isSimultaneousTurnsEnabled() const;
     bool BattleAutoSpellcast() const;
     bool isPriceOfLoyaltySupported() const;
     bool isMonochromeCursorEnabled() const;
@@ -298,6 +301,7 @@ public:
     // Sets the animation speed during combat in the range 1 - 10
     void SetBattleSpeed( int );
     void setBattleAutoResolve( bool enable );
+    void setSimultaneousTurns( bool enable );
     void setBattleAutoSpellcast( bool enable );
     void setFullScreen( const bool enable );
     void setMonochromeCursor( const bool enable );

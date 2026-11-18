@@ -79,6 +79,7 @@
 #include "resource.h"
 #include "screen.h"
 #include "settings.h"
+#include "timing.h"
 #include "tools.h"
 #include "translations.h"
 #include "ui_dialog.h"
@@ -812,6 +813,12 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
         res = fheroes2::GameMode::END_TURN;
 
+        // Simultaneous turns (experimental, single human player only): the human plots routes, the computer players choose their routes,
+        // and then all heroes walk together.
+        const bool isSimultaneousTurns = conf.isSimultaneousTurnsEnabled() && !isHotSeatGame && !isAutoPlaytest;
+        std::vector<Heroes *> simultaneousHeroes;
+        PlayerColor simultaneousHumanColor = PlayerColor::NONE;
+
         for ( const Player * player : sortedPlayers ) {
             assert( player != nullptr );
 
@@ -881,6 +888,14 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
                     res = HumanTurn( isLoadedFromSave );
 
+                    if ( isSimultaneousTurns && res == fheroes2::GameMode::END_TURN ) {
+                        simultaneousHumanColor = playerColor;
+
+                        for ( Heroes * hero : kingdom.GetHeroes() ) {
+                            simultaneousHeroes.push_back( hero );
+                        }
+                    }
+
                     // Skip resetting Audio after winning scenario because MUS::VICTORY should continue playing.
                     if ( res == fheroes2::GameMode::HIGHSCORES_STANDARD ) {
                         break;
@@ -935,7 +950,17 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
                     }
 #endif
 
+                    AI::Planner::Get().setDeferHeroMovement( isSimultaneousTurns );
+
                     res = AI::Planner::Get().KingdomTurn( kingdom );
+
+                    AI::Planner::Get().setDeferHeroMovement( false );
+
+                    if ( isSimultaneousTurns ) {
+                        for ( Heroes * hero : AI::Planner::Get().takeDeferredHeroes() ) {
+                            simultaneousHeroes.push_back( hero );
+                        }
+                    }
                     // This function must return only game state related values.
                     assert( res != fheroes2::GameMode::CANCEL );
 
@@ -976,6 +1001,57 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
             isLoadedFromSave = false;
         }
 
+        if ( isSimultaneousTurns && res == fheroes2::GameMode::END_TURN && !skipTurns ) {
+            // All players have planned. Walk all heroes together; computer heroes that still have movement left plan again and continue.
+            for ( int round = 0; round < 4 && res == fheroes2::GameMode::END_TURN; ++round ) {
+                if ( simultaneousHumanColor != PlayerColor::NONE ) {
+                    conf.SetCurrentColor( simultaneousHumanColor );
+                }
+
+                res = runSimultaneousResolution( simultaneousHeroes );
+                if ( res != fheroes2::GameMode::END_TURN ) {
+                    break;
+                }
+
+                simultaneousHeroes.clear();
+
+                for ( const Player * player : sortedPlayers ) {
+                    Kingdom & aiKingdom = world.GetKingdom( player->GetColor() );
+                    if ( !aiKingdom.isPlay() || aiKingdom.GetControl() != CONTROL_AI ) {
+                        continue;
+                    }
+
+                    conf.SetCurrentColor( player->GetColor() );
+
+                    AI::Planner::Get().setDeferHeroMovement( true );
+
+                    res = AI::Planner::Get().KingdomTurn( aiKingdom );
+
+                    AI::Planner::Get().setDeferHeroMovement( false );
+
+                    for ( Heroes * hero : AI::Planner::Get().takeDeferredHeroes() ) {
+                        simultaneousHeroes.push_back( hero );
+                    }
+
+                    if ( res != fheroes2::GameMode::END_TURN ) {
+                        break;
+                    }
+                }
+
+                if ( simultaneousHeroes.empty() ) {
+                    break;
+                }
+            }
+
+            if ( res == fheroes2::GameMode::END_TURN ) {
+                // Check if the game is over after the heroes have moved
+                const fheroes2::GameMode gameOverState = gameResult.checkGameOver();
+                if ( gameOverState != fheroes2::GameMode::CANCEL ) {
+                    res = gameOverState;
+                }
+            }
+        }
+
         // We went through all the players, but the current player from the save file is still not found,
         // something is clearly wrong here
         if ( skipTurns ) {
@@ -1002,6 +1078,82 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
     }
 
     return res;
+}
+
+fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std::vector<Heroes *> & heroes )
+{
+    std::vector<Heroes *> walkers;
+
+    for ( Heroes * hero : heroes ) {
+        if ( hero != nullptr && hero->isActive() && hero->GetPath().isValidForMovement() && hero->MayStillMove( false, true ) ) {
+            hero->SetMove( true );
+            walkers.push_back( hero );
+        }
+    }
+
+    if ( walkers.empty() ) {
+        return fheroes2::GameMode::END_TURN;
+    }
+
+    Cursor::Get().SetThemes( Cursor::WAIT );
+
+    LocalEvent & le = LocalEvent::Get();
+    GameOver::Result & gameResult = GameOver::Result::Get();
+    fheroes2::Display & display = fheroes2::Display::instance();
+
+    bool isAnyHeroMoving = true;
+
+    while ( isAnyHeroMoving ) {
+        if ( !le.HandleEvents( false, true ) ) {
+            if ( Game::processExitEvent() == fheroes2::GameMode::QUIT_GAME ) {
+                return fheroes2::GameMode::QUIT_GAME;
+            }
+        }
+
+        isAnyHeroMoving = false;
+
+        // One step for every hero in a fixed order: human heroes first, then the computer heroes. A hero that steps onto a tile occupied by
+        // a rival hero attacks it, as in the normal game.
+        for ( Heroes * hero : walkers ) {
+            if ( !hero->isActive() ) {
+                continue;
+            }
+
+            if ( !hero->isMoveEnabled() ) {
+                hero->SetMove( false );
+                continue;
+            }
+
+            hero->Move( true );
+
+            if ( hero->isAction() ) {
+                hero->ResetAction();
+
+                const fheroes2::GameMode gameState = gameResult.checkGameOver();
+                if ( gameState != fheroes2::GameMode::CANCEL ) {
+                    return gameState;
+                }
+            }
+
+            if ( hero->isActive() && hero->isMoveEnabled() ) {
+                isAnyHeroMoving = true;
+            }
+            else if ( hero->isActive() ) {
+                hero->SetMove( false );
+            }
+        }
+
+        if ( Heroes * focusHero = GetFocusHeroes(); focusHero != nullptr && focusHero->isActive() ) {
+            _gameArea.SetCenter( focusHero->GetCenter() );
+        }
+
+        redraw( REDRAW_GAMEAREA | REDRAW_STATUS | REDRAW_RADAR );
+        display.render();
+
+        fheroes2::delayforMs( 150 );
+    }
+
+    return fheroes2::GameMode::END_TURN;
 }
 
 fheroes2::GameMode Interface::AdventureMap::HumanTurn( const bool isLoadedFromSave )

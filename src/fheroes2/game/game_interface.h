@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "game_mode.h"
 #include "interface_base.h"
@@ -144,6 +145,9 @@ namespace Interface
         void EventKeyArrowPress( const int dir );
 
         fheroes2::GameMode StartGame();
+
+        // Simultaneous turns: walks all given heroes together, one tile per step. Returns END_TURN or a game over state.
+        fheroes2::GameMode runSimultaneousResolution( const std::vector<Heroes *> & heroes );
 
         void mouseCursorAreaClickLeft( const int32_t tileIndex ) override;
         void mouseCursorAreaPressRight( const int32_t tileIndex ) const override;

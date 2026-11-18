@@ -47,6 +47,7 @@ namespace
         InterfacePresence,
         CursorType,
         ArmyEstimationMode,
+        SimultaneousTurns,
         Exit
     };
 
@@ -59,6 +60,17 @@ namespace
     const fheroes2::Rect cursorTypeRoi{ fheroes2::twoOptionsOffsetX, optionOffset.y + offsetBetweenOptions.height, fheroes2::optionIconSize, fheroes2::optionIconSize };
     const fheroes2::Rect scrollSpeedRoi{ fheroes2::twoOptionsOffsetX + offsetBetweenOptions.width, optionOffset.y + offsetBetweenOptions.height, fheroes2::optionIconSize,
                                          fheroes2::optionIconSize };
+
+    const fheroes2::Rect simultaneousTurnsRoi{ fheroes2::twoOptionsOffsetX + ( fheroes2::threeOptionsStepX / 2 ), optionOffset.y + offsetBetweenOptions.height * 2,
+                                               fheroes2::optionIconSize, fheroes2::optionIconSize };
+
+    void drawSimultaneousTurnsOption( const fheroes2::Rect & optionRoi )
+    {
+        const bool isEnabled = Settings::Get().isSimultaneousTurnsEnabled();
+
+        fheroes2::drawOption( optionRoi, Assets::getImage( ICN::SPANEL, isEnabled ? 16 : 18 ), _( "Simultaneous Turns" ), isEnabled ? _( "On" ) : _( "Off" ),
+                              fheroes2::UiOptionTextWidth::TWO_ELEMENTS_ROW );
+    }
 
     void drawInterfacePresence( const fheroes2::Rect & optionRoi )
     {
@@ -92,7 +104,7 @@ namespace
     {
         fheroes2::Display & display = fheroes2::Display::instance();
 
-        fheroes2::StandardWindow background( 289, fheroes2::optionsStepY * 2 + 52, true, display );
+        fheroes2::StandardWindow background( 289, fheroes2::optionsStepY * 3 + 52, true, display );
 
         const fheroes2::Rect windowRoi = background.activeArea();
         fheroes2::ImageRestorer emptyDialogRestorer( display, windowRoi.x, windowRoi.y, windowRoi.width, windowRoi.height - 30 );
@@ -102,16 +114,19 @@ namespace
         const fheroes2::Rect windowCursorTypeRoi( cursorTypeRoi + windowRoi.getPosition() );
         const fheroes2::Rect windowScrollSpeedRoi( scrollSpeedRoi + windowRoi.getPosition() );
         const fheroes2::Rect windowArmyEstimationModeRoi( armyEstimationModeRoi + windowRoi.getPosition() );
+        const fheroes2::Rect windowSimultaneousTurnsRoi( simultaneousTurnsRoi + windowRoi.getPosition() );
 
         Settings & conf = Settings::Get();
 
         const auto drawOptions
-            = [&conf, &windowInterfaceTypeRoi, &windowInterfacePresenceRoi, &windowCursorTypeRoi, &windowScrollSpeedRoi, &windowArmyEstimationModeRoi]() {
+            = [&conf, &windowInterfaceTypeRoi, &windowInterfacePresenceRoi, &windowCursorTypeRoi, &windowScrollSpeedRoi, &windowArmyEstimationModeRoi,
+               &windowSimultaneousTurnsRoi]() {
                   drawInterfaceType( windowInterfaceTypeRoi, conf.getInterfaceType(), fheroes2::UiOptionTextWidth::TWO_ELEMENTS_ROW );
                   drawInterfacePresence( windowInterfacePresenceRoi );
                   drawCursorType( windowCursorTypeRoi, conf.isMonochromeCursorEnabled(), fheroes2::UiOptionTextWidth::TWO_ELEMENTS_ROW );
                   drawScrollSpeed( windowScrollSpeedRoi, conf.ScrollSpeed() );
                   drawArmyNumberEstimationOption( windowArmyEstimationModeRoi );
+                  drawSimultaneousTurnsOption( windowSimultaneousTurnsRoi );
               };
 
         drawOptions();
@@ -153,6 +168,14 @@ namespace
                 return SelectedWindow::ArmyEstimationMode;
             }
 
+            if ( le.MouseClickLeft( windowSimultaneousTurnsRoi ) ) {
+                saveConfiguration = true;
+                conf.setSimultaneousTurns( !conf.isSimultaneousTurnsEnabled() );
+                refreshWindow();
+
+                continue;
+            }
+
             if ( le.MouseClickLeft( windowScrollSpeedRoi ) ) {
                 saveConfiguration = true;
                 conf.SetScrollSpeed( ( conf.ScrollSpeed() + 1 ) % ( SCROLL_SPEED_VERY_FAST + 1 ) );
@@ -192,6 +215,10 @@ namespace
                     _( "Army Estimation" ),
                     _( "Toggle how army sizes are displayed when right-clicking armies on the adventure map. \n\nCanonical: Army sizes are shown as descriptive text (e.g. \"Few\").\n\nNumeric: Army sizes are shown as numeric ranges (e.g. \"1-4\")." ),
                     0 );
+            }
+            else if ( le.isMouseRightButtonPressedInArea( windowSimultaneousTurnsRoi ) ) {
+                fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ),
+                                                   _( "Experimental. When on, you plot your heroes' routes and end the turn; then all heroes, including the computer's, move together." ), 0 );
             }
             else if ( le.isMouseRightButtonPressedInArea( buttonOk.area() ) ) {
                 fheroes2::showStandardTextMessage( _( "Okay" ), _( "Exit this menu." ), 0 );

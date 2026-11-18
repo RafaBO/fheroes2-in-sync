@@ -74,6 +74,30 @@
 #include "view_world.h"
 #include "world.h"
 
+namespace
+{
+    // In the simultaneous turns mode the human player only plots routes, the heroes walk when the turn ends.
+    bool isSimultaneousPlanning()
+    {
+        const Settings & conf = Settings::Get();
+
+        return conf.isSimultaneousTurnsEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) && !conf.IsGameType( Game::TYPE_AUTO_PLAYTEST );
+    }
+
+    void showSimultaneousPlanningHint()
+    {
+        static bool isShown = false;
+        if ( isShown ) {
+            return;
+        }
+
+        isShown = true;
+
+        fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ), _( "The route is plotted. Your hero will walk it, together with all other heroes, when you end your turn." ),
+                                           Dialog::OK );
+    }
+}
+
 void Interface::AdventureMap::ShowPathOrStartMoveHero( Heroes * hero, const int32_t destinationIdx )
 {
     if ( hero == nullptr || !Maps::isValidAbsIndex( destinationIdx ) ) {
@@ -95,6 +119,11 @@ void Interface::AdventureMap::ShowPathOrStartMoveHero( Heroes * hero, const int3
     }
     // Start the hero's movement
     else if ( path.isValidForMovement() && hero->MayStillMove( false, true ) ) {
+        if ( isSimultaneousPlanning() ) {
+            showSimultaneousPlanningHint();
+            return;
+        }
+
         _startHeroMove( *hero );
     }
 }
@@ -182,6 +211,11 @@ fheroes2::GameMode Interface::AdventureMap::EventHeroMovement()
 {
     if ( Heroes * hero = GetFocusHeroes(); hero ) {
         if ( hero->GetPath().isValidForMovement() && hero->MayStillMove( false, true ) ) {
+            if ( isSimultaneousPlanning() ) {
+                showSimultaneousPlanningHint();
+                return fheroes2::GameMode::CANCEL;
+            }
+
             _startHeroMove( *hero );
         }
         else if ( MP2::isRevisitAllowedForObject( hero->getObjectTypeUnderHero(), hero->isShipMaster() ) ) {

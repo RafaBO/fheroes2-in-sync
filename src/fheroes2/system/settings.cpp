@@ -63,6 +63,7 @@ namespace
         GAME_SHOW_ICONS = 0x00000100,
         GAME_SHOW_BUTTONS = 0x00000200,
         GAME_SHOW_STATUS = 0x00000400,
+        GAME_SIMULTANEOUS_TURNS = 0x00000800,
         GAME_FULLSCREEN = 0x00008000,
         GAME_3D_AUDIO = 0x00010000,
         GAME_SYSTEM_INFO = 0x00020000,
@@ -236,6 +237,10 @@ bool Settings::Read( const std::string & filePath )
 
     if ( config.Exists( "auto resolve battles" ) ) {
         setBattleAutoResolve( config.StrParams( "auto resolve battles" ) == "on" );
+    }
+
+    if ( config.Exists( "simultaneous turns" ) ) {
+        setSimultaneousTurns( config.StrParams( "simultaneous turns" ) == "on" );
     }
 
     if ( config.Exists( "auto spell casting" ) ) {
@@ -482,6 +487,9 @@ std::string Settings::getOptionsString() const
 
     os << std::endl << "# Enable auto resolve battles: on/off" << std::endl;
     os << "auto resolve battles = " << ( _gameOptions.Modes( GAME_BATTLE_AUTO_RESOLVE ) ? "on" : "off" ) << std::endl;
+
+    os << std::endl << "# Enable simultaneous turns (experimental): on/off" << std::endl;
+    os << "simultaneous turns = " << ( _gameOptions.Modes( GAME_SIMULTANEOUS_TURNS ) ? "on" : "off" ) << std::endl;
 
     os << std::endl << "# Enable auto combat spell casting: on/off" << std::endl;
     os << "auto spell casting = " << ( _gameOptions.Modes( GAME_BATTLE_AUTO_SPELLCAST ) ? "on" : "off" ) << std::endl;
@@ -780,6 +788,21 @@ void Settings::setBattleAutoResolve( bool enable )
     else {
         _gameOptions.ResetModes( GAME_BATTLE_AUTO_RESOLVE );
     }
+}
+
+void Settings::setSimultaneousTurns( bool enable )
+{
+    if ( enable ) {
+        _gameOptions.SetModes( GAME_SIMULTANEOUS_TURNS );
+    }
+    else {
+        _gameOptions.ResetModes( GAME_SIMULTANEOUS_TURNS );
+    }
+}
+
+bool Settings::isSimultaneousTurnsEnabled() const
+{
+    return _gameOptions.Modes( GAME_SIMULTANEOUS_TURNS );
 }
 
 void Settings::setBattleAutoSpellcast( bool enable )

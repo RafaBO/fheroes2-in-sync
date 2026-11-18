@@ -173,6 +173,20 @@ namespace AI
 
         void HeroesActionComplete( Heroes & hero, const int32_t tileIndex, const MP2::MapObjectType objectType );
 
+        // Simultaneous turns: while this is on, HeroesTurn() only chooses a target and a route for each hero and remembers the hero instead of
+        // walking the route. The caller walks all remembered heroes together.
+        void setDeferHeroMovement( const bool defer )
+        {
+            _deferHeroMovement = defer;
+        }
+
+        std::vector<Heroes *> takeDeferredHeroes()
+        {
+            std::vector<Heroes *> result;
+            result.swap( _deferredHeroes );
+            return result;
+        }
+
         void resetPathfinder()
         {
             _pathfinder.reset();
@@ -263,6 +277,9 @@ namespace AI
         }
 
         // The following member variables should not be saved or serialized
+
+        bool _deferHeroMovement{ false };
+        std::vector<Heroes *> _deferredHeroes;
 
         std::unordered_map<int32_t, MP2::MapObjectType> _mapActionObjects;
         std::unordered_map<int32_t, PriorityTask> _priorityTargets;
