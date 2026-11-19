@@ -1220,11 +1220,95 @@ void Heroes::_replenishSpellPoints()
     }
 }
 
+void Heroes::rebuildWaypointPath()
+{
+    // Forget the stops the hero has already reached
+    while ( !_waypoints.empty() && _waypoints.front() == GetIndex() ) {
+        _waypoints.erase( _waypoints.begin() );
+    }
+
+    if ( _waypoints.empty() ) {
+        _path.Reset();
+        return;
+    }
+
+    std::list<Route::Step> fullPath = world.getPath( *this, _waypoints.front() );
+    if ( fullPath.empty() ) {
+        _waypoints.clear();
+        _path.Reset();
+        return;
+    }
+
+    // A stop on an object that the hero only visits from the neighbouring tile (a chest, a monster, another hero, and so on) always ends the route.
+    const auto endsRoute = []( const int32_t index ) { return MP2::isNeedStayFront( world.getTile( index ).getMainObjectType() ); };
+
+    size_t reachableStops = 1;
+
+    if ( !endsRoute( _waypoints.front() ) ) {
+        for ( size_t i = 1; i < _waypoints.size(); ++i ) {
+            std::list<Route::Step> leg = world.getPathFrom( *this, _waypoints[i - 1], _waypoints[i] );
+            if ( leg.empty() ) {
+                break;
+            }
+
+            fullPath.splice( fullPath.end(), leg );
+            ++reachableStops;
+
+            if ( endsRoute( _waypoints[i] ) ) {
+                break;
+            }
+        }
+    }
+
+    _waypoints.resize( reachableStops );
+    _path.setPath( fullPath );
+
+    if ( !_path.isValidForMovement() ) {
+        _waypoints.clear();
+        _path.Reset();
+    }
+}
+
+void Heroes::addWaypoint( const int32_t dstIdx )
+{
+    if ( _waypoints.empty() ) {
+        if ( !_path.isValidForMovement() ) {
+            calculatePath( dstIdx );
+
+            if ( _path.isValidForMovement() ) {
+                _waypoints.push_back( dstIdx );
+            }
+
+            return;
+        }
+
+        _waypoints.push_back( _path.GetDestinationIndex() );
+    }
+
+    if ( _waypoints.back() == dstIdx ) {
+        return;
+    }
+
+    _waypoints.push_back( dstIdx );
+
+    rebuildWaypointPath();
+}
+
 void Heroes::calculatePath( int32_t dstIdx )
 {
     if ( dstIdx < 0 ) {
+        if ( !_waypoints.empty() ) {
+            // Recalculating an existing route with several stops
+            rebuildWaypointPath();
+            return;
+        }
+
         // Recalculating an existing path
         dstIdx = _path.GetDestinationIndex();
+    }
+    else {
+        // A new simple route replaces any route with several stops
+        _waypoints.clear();
     }
 
     if ( !_path.isValidForMovement() ) {

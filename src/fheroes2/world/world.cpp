@@ -1168,6 +1168,11 @@ std::list<Route::Step> World::getPath( const Heroes & hero, int targetIndex )
     return _pathfinder.buildPath( targetIndex );
 }
 
+std::list<Route::Step> World::getPathFrom( const Heroes & hero, int startIndex, int targetIndex )
+{
+    return _pathfinder.buildPathFrom( hero, startIndex, targetIndex );
+}
+
 void World::resetPathfinder()
 {
     _pathfinder.reset();

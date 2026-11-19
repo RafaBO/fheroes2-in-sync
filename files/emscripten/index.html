@@ -201,6 +201,13 @@
                 progressBar.set(done);
                 if (100 === done) progressBar.end();
             },
+            onExit: () => {
+                // The game was closed from its own menu. Save the files and reload the page, so the launcher comes back instead of a frozen black screen.
+                let reloaded = false;
+                const reload = () => { if (!reloaded) { reloaded = true; location.reload(); } };
+                setTimeout(reload, 1500);
+                try { FS.syncfs(false, () => setTimeout(reload, 200)); } catch (ignore) { reload(); }
+            },
             canvas
         }
     });

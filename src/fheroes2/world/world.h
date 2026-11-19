@@ -497,6 +497,7 @@ public:
 
     uint32_t getDistance( const Heroes & hero, int targetIndex );
     std::list<Route::Step> getPath( const Heroes & hero, int targetIndex );
+    std::list<Route::Step> getPathFrom( const Heroes & hero, int startIndex, int targetIndex );
     void resetPathfinder();
 
     void ComputeStaticAnalysis();

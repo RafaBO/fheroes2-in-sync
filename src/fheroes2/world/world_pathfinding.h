@@ -139,6 +139,10 @@ public:
     // then an empty path is returned.
     std::list<Route::Step> buildPath( const int targetIndex ) const;
 
+    // Same as buildPath(), but the path starts at 'startIndex' instead of the hero's own tile and the hero is assumed to have all its movement points.
+    // Used to plot routes with several stops.
+    std::list<Route::Step> buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex );
+
 private:
     // Follows regular passability rules (for the human player)
     void processCurrentNode( std::vector<int> & nodesToExplore, const int currentNodeIdx ) override;

@@ -497,6 +497,25 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPath( const int targetIndex )
     return path;
 }
 
+std::list<Route::Step> PlayerWorldPathfinder::buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex )
+{
+    if ( !Maps::isValidAbsIndex( startIndex ) || !Maps::isValidAbsIndex( targetIndex ) ) {
+        return {};
+    }
+
+    auto currentSettings = std::tie( _pathStart, _color, _remainingMovePoints, _pathfindingSkill, _maxMovePoints );
+    const auto newSettings = std::make_tuple( startIndex, hero.GetColor(), hero.GetMaxMovePoints(),
+                                              static_cast<uint8_t>( hero.GetLevelSkill( Skill::Secondary::PATHFINDING ) ), hero.GetMaxMovePoints() );
+
+    if ( currentSettings != newSettings ) {
+        currentSettings = newSettings;
+
+        processWorldMap();
+    }
+
+    return buildPath( targetIndex );
+}
+
 void PlayerWorldPathfinder::processCurrentNode( std::vector<int> & nodesToExplore, const int currentNodeIdx )
 {
     const bool isFirstNode = ( currentNodeIdx == _pathStart );

@@ -93,7 +93,7 @@ namespace
 
         isShown = true;
 
-        fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ), _( "The route is plotted. Your hero will walk it, together with all other heroes, when you end your turn." ),
+        fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ), _( "The route is plotted. Hold Shift and click to add more stops to it. Your hero will walk the route, together with all other heroes, when you end your turn." ),
                                            Dialog::OK );
     }
 }
@@ -107,6 +107,15 @@ void Interface::AdventureMap::ShowPathOrStartMoveHero( Heroes * hero, const int3
     assert( !hero->Modes( Heroes::ENABLEMOVE ) );
 
     const Route::Path & path = hero->GetPath();
+
+    // Simultaneous turns: Shift + click adds one more stop to the plotted route
+    if ( isSimultaneousPlanning() && ( LocalEvent::getCurrentKeyModifiers() & fheroes2::KeyModifier::KEY_MODIFIER_SHIFT ) != 0 && hero->GetIndex() != destinationIdx ) {
+        hero->addWaypoint( destinationIdx );
+
+        _gameArea.SetRedraw();
+        _buttonsPanel.setRedraw();
+        return;
+    }
 
     // Calculate and show the hero's path
     if ( path.GetDestinationIndex() != destinationIdx ) {

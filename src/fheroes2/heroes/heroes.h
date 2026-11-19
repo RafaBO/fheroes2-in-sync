@@ -525,6 +525,9 @@ public:
     // PlayerWorldPathfinder.
     void calculatePath( int32_t dstIdx );
 
+    // Simultaneous turns: adds one more stop to the plotted route, so the hero walks through all stops in order.
+    void addWaypoint( const int32_t dstIdx );
+
     int GetDirection() const
     {
         return _direction;
@@ -785,6 +788,11 @@ private:
     MP2::MapObjectType _objectTypeUnderHero{ MP2::OBJ_NONE };
 
     Route::Path _path{ *this };
+
+    // The stops of a route with several stops, in the order they will be visited (the last one is the final destination). Empty for a simple route.
+    std::vector<int32_t> _waypoints;
+
+    void rebuildWaypointPath();
 
     std::list<IndexObject> _visitedObjects;
 
