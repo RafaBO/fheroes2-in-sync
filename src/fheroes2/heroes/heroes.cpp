@@ -1269,6 +1269,19 @@ void Heroes::rebuildWaypointPath()
     }
 }
 
+void Heroes::removeLastWaypoint()
+{
+    if ( _waypoints.size() > 1 ) {
+        _waypoints.pop_back();
+
+        rebuildWaypointPath();
+        return;
+    }
+
+    _waypoints.clear();
+    _path.Reset();
+}
+
 void Heroes::addWaypoint( const int32_t dstIdx )
 {
     if ( _waypoints.empty() ) {

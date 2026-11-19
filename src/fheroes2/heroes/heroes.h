@@ -528,6 +528,9 @@ public:
     // Simultaneous turns: adds one more stop to the plotted route, so the hero walks through all stops in order.
     void addWaypoint( const int32_t dstIdx );
 
+    // Simultaneous turns: removes the last stop of the plotted route. Removes the whole route if only one stop is left.
+    void removeLastWaypoint();
+
     int GetDirection() const
     {
         return _direction;

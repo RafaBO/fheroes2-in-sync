@@ -93,7 +93,7 @@ namespace
 
         isShown = true;
 
-        fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ), _( "The route is plotted. Hold Shift and click to add more stops to it. Your hero will walk the route, together with all other heroes, when you end your turn." ),
+        fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ), _( "Click the map to add stops to your hero's route. The undo button removes the last stop. Your hero walks the route, together with all other heroes, when you end your turn." ),
                                            Dialog::OK );
     }
 }
@@ -108,12 +108,19 @@ void Interface::AdventureMap::ShowPathOrStartMoveHero( Heroes * hero, const int3
 
     const Route::Path & path = hero->GetPath();
 
-    // Simultaneous turns: Shift + click adds one more stop to the plotted route
-    if ( isSimultaneousPlanning() && ( LocalEvent::getCurrentKeyModifiers() & fheroes2::KeyModifier::KEY_MODIFIER_SHIFT ) != 0 && hero->GetIndex() != destinationIdx ) {
-        hero->addWaypoint( destinationIdx );
+    // Simultaneous turns: every click on the map adds one more stop to the plotted route
+    if ( isSimultaneousPlanning() ) {
+        if ( hero->GetIndex() != destinationIdx ) {
+            hero->addWaypoint( destinationIdx );
 
-        _gameArea.SetRedraw();
-        _buttonsPanel.setRedraw();
+            _gameArea.SetRedraw();
+            _buttonsPanel.setRedraw();
+
+            if ( hero->GetPath().isValidForMovement() ) {
+                showSimultaneousPlanningHint();
+            }
+        }
+
         return;
     }
 
@@ -128,11 +135,6 @@ void Interface::AdventureMap::ShowPathOrStartMoveHero( Heroes * hero, const int3
     }
     // Start the hero's movement
     else if ( path.isValidForMovement() && hero->MayStillMove( false, true ) ) {
-        if ( isSimultaneousPlanning() ) {
-            showSimultaneousPlanningHint();
-            return;
-        }
-
         _startHeroMove( *hero );
     }
 }
@@ -219,12 +221,15 @@ void Interface::AdventureMap::EventNextHero()
 fheroes2::GameMode Interface::AdventureMap::EventHeroMovement()
 {
     if ( Heroes * hero = GetFocusHeroes(); hero ) {
-        if ( hero->GetPath().isValidForMovement() && hero->MayStillMove( false, true ) ) {
-            if ( isSimultaneousPlanning() ) {
-                showSimultaneousPlanningHint();
-                return fheroes2::GameMode::CANCEL;
-            }
+        if ( isSimultaneousPlanning() && hero->GetPath().isValidForMovement() ) {
+            // Simultaneous turns: this button undoes the last stop of the route
+            hero->removeLastWaypoint();
 
+            setRedraw( REDRAW_GAMEAREA | REDRAW_BUTTONS );
+            return fheroes2::GameMode::CANCEL;
+        }
+
+        if ( hero->GetPath().isValidForMovement() && hero->MayStillMove( false, true ) ) {
             _startHeroMove( *hero );
         }
         else if ( MP2::isRevisitAllowedForObject( hero->getObjectTypeUnderHero(), hero->isShipMaster() ) ) {

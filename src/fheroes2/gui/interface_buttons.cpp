@@ -24,6 +24,9 @@
 #include "interface_buttons.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <iterator>
 #include <cassert>
 
 #include "dialog.h"
@@ -38,8 +41,176 @@
 #include "screen.h"
 #include "settings.h"
 #include "translations.h"
+#include "game_assets.h"
+#include "image.h"
 #include "ui_dialog.h"
 #include "world.h"
+
+namespace
+{
+    // Owner's 'Undo last stop' icon (36 x 36). Each entry is x, y, colour (0 = black, 1 = white).
+    constexpr int undoIconPixelCount = 118;
+    constexpr int undoIconPixels[undoIconPixelCount][3] = {
+        { 25, 4, 0 },
+        { 26, 4, 0 },
+        { 24, 5, 1 },
+        { 26, 5, 0 },
+        { 27, 5, 0 },
+        { 27, 6, 0 },
+        { 28, 6, 0 },
+        { 30, 6, 0 },
+        { 20, 7, 0 },
+        { 21, 7, 0 },
+        { 22, 7, 0 },
+        { 26, 7, 1 },
+        { 28, 7, 0 },
+        { 29, 7, 0 },
+        { 30, 7, 0 },
+        { 20, 8, 1 },
+        { 21, 8, 1 },
+        { 22, 8, 1 },
+        { 28, 8, 0 },
+        { 29, 8, 0 },
+        { 30, 8, 0 },
+        { 17, 9, 1 },
+        { 18, 9, 0 },
+        { 27, 9, 0 },
+        { 28, 9, 0 },
+        { 30, 9, 0 },
+        { 31, 9, 0 },
+        { 17, 10, 1 },
+        { 18, 10, 0 },
+        { 26, 10, 0 },
+        { 27, 10, 0 },
+        { 29, 10, 1 },
+        { 31, 10, 0 },
+        { 32, 10, 0 },
+        { 17, 11, 1 },
+        { 18, 11, 0 },
+        { 25, 11, 0 },
+        { 26, 11, 0 },
+        { 30, 11, 1 },
+        { 32, 11, 0 },
+        { 33, 11, 0 },
+        { 25, 12, 1 },
+        { 31, 12, 1 },
+        { 33, 12, 1 },
+        { 17, 14, 0 },
+        { 18, 14, 0 },
+        { 19, 14, 0 },
+        { 16, 15, 0 },
+        { 18, 15, 1 },
+        { 19, 15, 1 },
+        { 20, 15, 0 },
+        { 14, 16, 1 },
+        { 15, 16, 0 },
+        { 20, 16, 1 },
+        { 21, 16, 0 },
+        { 14, 17, 1 },
+        { 15, 17, 0 },
+        { 20, 17, 1 },
+        { 21, 17, 0 },
+        { 14, 18, 1 },
+        { 15, 18, 0 },
+        { 20, 18, 1 },
+        { 21, 18, 0 },
+        { 15, 19, 1 },
+        { 16, 19, 0 },
+        { 20, 19, 0 },
+        { 21, 19, 1 },
+        { 16, 20, 1 },
+        { 17, 20, 0 },
+        { 18, 20, 0 },
+        { 19, 20, 0 },
+        { 20, 20, 1 },
+        { 18, 21, 1 },
+        { 19, 21, 1 },
+        { 17, 23, 1 },
+        { 18, 23, 0 },
+        { 7, 24, 0 },
+        { 8, 24, 0 },
+        { 9, 24, 0 },
+        { 17, 24, 1 },
+        { 18, 24, 0 },
+        { 6, 25, 0 },
+        { 7, 25, 1 },
+        { 8, 25, 1 },
+        { 9, 25, 1 },
+        { 10, 25, 0 },
+        { 17, 25, 1 },
+        { 18, 25, 0 },
+        { 4, 26, 1 },
+        { 5, 26, 0 },
+        { 6, 26, 1 },
+        { 10, 26, 1 },
+        { 11, 26, 0 },
+        { 4, 27, 1 },
+        { 5, 27, 0 },
+        { 10, 27, 1 },
+        { 11, 27, 0 },
+        { 14, 27, 0 },
+        { 15, 27, 0 },
+        { 16, 27, 0 },
+        { 4, 28, 1 },
+        { 5, 28, 0 },
+        { 10, 28, 1 },
+        { 11, 28, 0 },
+        { 14, 28, 1 },
+        { 15, 28, 1 },
+        { 5, 29, 1 },
+        { 6, 29, 0 },
+        { 10, 29, 0 },
+        { 11, 29, 1 },
+        { 6, 30, 1 },
+        { 7, 30, 0 },
+        { 8, 30, 0 },
+        { 9, 30, 0 },
+        { 10, 30, 1 },
+        { 7, 31, 1 },
+        { 8, 31, 1 },
+        { 9, 31, 1 } };
+
+    // Builds a button picture: the original button with its picture wiped out and the undo icon drawn on it.
+    fheroes2::Sprite makeUndoButton( const fheroes2::Sprite & original, const int32_t offset )
+    {
+        fheroes2::Sprite result( original );
+
+        const int32_t width = result.width();
+        const int32_t height = result.height();
+        uint8_t * image = result.image();
+        uint8_t * transform = result.transform();
+
+        std::array<int32_t, 256> histogram{};
+        for ( int32_t y = 3; y < height - 3; ++y ) {
+            for ( int32_t x = 3; x < width - 3; ++x ) {
+                ++histogram[image[y * width + x]];
+            }
+        }
+
+        const uint8_t background = static_cast<uint8_t>( std::distance( histogram.begin(), std::max_element( histogram.begin(), histogram.end() ) ) );
+
+        for ( int32_t y = 3; y < height - 3; ++y ) {
+            for ( int32_t x = 3; x < width - 3; ++x ) {
+                image[y * width + x] = background;
+                transform[y * width + x] = 0;
+            }
+        }
+
+        const uint8_t black = fheroes2::GetColorId( 0, 0, 0 );
+        const uint8_t white = fheroes2::GetColorId( 255, 255, 255 );
+
+        for ( const auto & pixel : undoIconPixels ) {
+            const int32_t x = pixel[0] + offset;
+            const int32_t y = pixel[1] + offset;
+
+            if ( x >= 2 && x < width - 2 && y >= 2 && y < height - 2 ) {
+                fheroes2::SetPixel( result, x, y, pixel[2] != 0 ? white : black );
+            }
+        }
+
+        return result;
+    }
+}
 
 void Interface::ButtonsPanel::SavePosition()
 {
@@ -119,6 +290,20 @@ void Interface::ButtonsPanel::_redraw()
 
     _buttonNextHero.draw();
     _buttonHeroMovement.draw();
+
+    if ( Settings::Get().isSimultaneousTurnsEnabled() && _buttonHeroMovement.isEnabled() ) {
+        const Heroes * currentHero = GetFocusHeroes();
+
+        if ( currentHero != nullptr && currentHero->GetPath().isValidForMovement() ) {
+            // Simultaneous turns: this button undoes the last stop of the route
+            const int icnbtn = conf.isEvilInterfaceEnabled() ? ICN::ADVEBTNS : ICN::ADVBTNS;
+            const bool isPressed = _buttonHeroMovement.isPressed();
+            const fheroes2::Sprite undoButton = makeUndoButton( Assets::getImage( icnbtn, isPressed ? 3 : 2 ), isPressed ? 1 : 0 );
+
+            fheroes2::Blit( undoButton, fheroes2::Display::instance(), _heroMovementRect.x, _heroMovementRect.y );
+        }
+    }
+
     _buttonKingdom.draw();
     _buttonSpell.draw();
     _buttonEndTurn.draw();
@@ -212,6 +397,9 @@ fheroes2::GameMode Interface::ButtonsPanel::queueEventProcessing()
     }
     else if ( le.isMouseRightButtonPressedInArea( _nextHeroRect ) ) {
         fheroes2::showStandardTextMessage( _( "Next Hero" ), _( "Select the next Hero." ), Dialog::ZERO );
+    }
+    else if ( le.isMouseRightButtonPressedInArea( _heroMovementRect ) && Settings::Get().isSimultaneousTurnsEnabled() ) {
+        fheroes2::showStandardTextMessage( _( "Undo Last Stop" ), _( "Remove the last stop of the hero's route. Press and hold this button to remove the whole route." ), Dialog::ZERO );
     }
     else if ( le.isMouseRightButtonPressedInArea( _heroMovementRect ) ) {
         fheroes2::showStandardTextMessage(
