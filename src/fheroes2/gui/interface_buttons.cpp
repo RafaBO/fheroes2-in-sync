@@ -30,6 +30,7 @@
 #include <cassert>
 
 #include "dialog.h"
+#include "game.h"
 #include "game_interface.h"
 #include "heroes.h"
 #include "icn.h"
@@ -48,53 +49,71 @@
 
 namespace
 {
-    // Owner's 'Undo last stop' icon (36 x 36). Each entry is x, y, colour (0 = black, 1 = white).
-    constexpr int undoIconPixelCount = 118;
+    // Owner's 'Undo last stop' icon, drawn inside the 28 x 28 face of the 36 x 36 button. Each entry is x, y, colour (0 = dark outline, 1 = highlight).
+    constexpr int undoIconPixelCount = 136;
     constexpr int undoIconPixels[undoIconPixelCount][3] = {
-        { 25, 4, 0 },
-        { 26, 4, 0 },
-        { 24, 5, 1 },
-        { 26, 5, 0 },
-        { 27, 5, 0 },
-        { 27, 6, 0 },
+        { 23, 4, 0 },
+        { 24, 4, 0 },
+        { 30, 4, 0 },
+        { 31, 4, 0 },
+        { 22, 5, 1 },
+        { 23, 5, 1 },
+        { 24, 5, 0 },
+        { 25, 5, 0 },
+        { 29, 5, 0 },
+        { 30, 5, 0 },
+        { 31, 5, 1 },
+        { 24, 6, 1 },
+        { 25, 6, 0 },
+        { 26, 6, 0 },
         { 28, 6, 0 },
-        { 30, 6, 0 },
+        { 29, 6, 0 },
+        { 30, 6, 1 },
         { 20, 7, 0 },
         { 21, 7, 0 },
         { 22, 7, 0 },
-        { 26, 7, 1 },
+        { 24, 7, 1 },
+        { 25, 7, 1 },
+        { 26, 7, 0 },
+        { 27, 7, 0 },
         { 28, 7, 0 },
-        { 29, 7, 0 },
-        { 30, 7, 0 },
+        { 29, 7, 1 },
         { 20, 8, 1 },
         { 21, 8, 1 },
         { 22, 8, 1 },
+        { 26, 8, 0 },
+        { 27, 8, 0 },
         { 28, 8, 0 },
-        { 29, 8, 0 },
-        { 30, 8, 0 },
         { 17, 9, 1 },
         { 18, 9, 0 },
-        { 27, 9, 0 },
+        { 25, 9, 0 },
+        { 26, 9, 0 },
+        { 27, 9, 1 },
         { 28, 9, 0 },
-        { 30, 9, 0 },
-        { 31, 9, 0 },
+        { 29, 9, 0 },
         { 17, 10, 1 },
         { 18, 10, 0 },
-        { 26, 10, 0 },
-        { 27, 10, 0 },
-        { 29, 10, 1 },
-        { 31, 10, 0 },
-        { 32, 10, 0 },
+        { 24, 10, 0 },
+        { 25, 10, 0 },
+        { 26, 10, 1 },
+        { 27, 10, 1 },
+        { 28, 10, 1 },
+        { 29, 10, 0 },
+        { 30, 10, 0 },
         { 17, 11, 1 },
         { 18, 11, 0 },
-        { 25, 11, 0 },
-        { 26, 11, 0 },
-        { 30, 11, 1 },
-        { 32, 11, 0 },
-        { 33, 11, 0 },
-        { 25, 12, 1 },
+        { 23, 11, 0 },
+        { 24, 11, 0 },
+        { 25, 11, 1 },
+        { 28, 11, 1 },
+        { 29, 11, 1 },
+        { 30, 11, 0 },
+        { 31, 11, 0 },
+        { 23, 12, 1 },
+        { 24, 12, 1 },
+        { 29, 12, 1 },
+        { 30, 12, 1 },
         { 31, 12, 1 },
-        { 33, 12, 1 },
         { 17, 14, 0 },
         { 18, 14, 0 },
         { 19, 14, 0 },
@@ -170,41 +189,60 @@ namespace
         { 8, 31, 1 },
         { 9, 31, 1 } };
 
-    // Builds a button picture: the original button with its picture wiped out and the undo icon drawn on it.
-    fheroes2::Sprite makeUndoButton( const fheroes2::Sprite & original, const int32_t offset )
+    bool isSimultaneousPlanning()
+    {
+        const Settings & conf = Settings::Get();
+
+        return conf.isSimultaneousTurnsEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) && !conf.IsGameType( Game::TYPE_AUTO_PLAYTEST );
+    }
+
+    // Builds a button picture: the original button with its picture wiped out and the undo icon carved on it.
+    fheroes2::Sprite makeUndoButton( const fheroes2::Sprite & original, const int32_t offset, const bool isEvilInterface )
     {
         fheroes2::Sprite result( original );
 
         const int32_t width = result.width();
         const int32_t height = result.height();
+        if ( width < 12 || height < 12 ) {
+            return result;
+        }
+
         uint8_t * image = result.image();
-        uint8_t * transform = result.transform();
+        uint8_t * transform = result.singleLayer() ? nullptr : result.transform();
+
+        const int32_t minX = 4 + offset;
+        const int32_t minY = 4 + offset;
+        const int32_t maxX = std::min( width - 4 + offset, width );
+        const int32_t maxY = std::min( height - 4 + offset, height );
 
         std::array<int32_t, 256> histogram{};
-        for ( int32_t y = 3; y < height - 3; ++y ) {
-            for ( int32_t x = 3; x < width - 3; ++x ) {
+        for ( int32_t y = minY; y < maxY; ++y ) {
+            for ( int32_t x = minX; x < maxX; ++x ) {
                 ++histogram[image[y * width + x]];
             }
         }
 
         const uint8_t background = static_cast<uint8_t>( std::distance( histogram.begin(), std::max_element( histogram.begin(), histogram.end() ) ) );
 
-        for ( int32_t y = 3; y < height - 3; ++y ) {
-            for ( int32_t x = 3; x < width - 3; ++x ) {
+        for ( int32_t y = minY; y < maxY; ++y ) {
+            for ( int32_t x = minX; x < maxX; ++x ) {
                 image[y * width + x] = background;
-                transform[y * width + x] = 0;
+
+                if ( transform != nullptr ) {
+                    transform[y * width + x] = 0;
+                }
             }
         }
 
-        const uint8_t black = fheroes2::GetColorId( 0, 0, 0 );
-        const uint8_t white = fheroes2::GetColorId( 255, 255, 255 );
+        const uint8_t dark = isEvilInterface ? fheroes2::GetColorId( 0x18, 0x18, 0x18 ) : fheroes2::GetColorId( 0x58, 0x28, 0x08 );
+        const uint8_t highlight = fheroes2::GetColorId( 0xFC, 0xFC, 0xFC );
 
         for ( const auto & pixel : undoIconPixels ) {
             const int32_t x = pixel[0] + offset;
             const int32_t y = pixel[1] + offset;
 
-            if ( x >= 2 && x < width - 2 && y >= 2 && y < height - 2 ) {
-                fheroes2::SetPixel( result, x, y, pixel[2] != 0 ? white : black );
+            if ( x >= minX && x < maxX && y >= minY && y < maxY ) {
+                image[y * width + x] = pixel[2] != 0 ? highlight : dark;
             }
         }
 
@@ -291,17 +329,14 @@ void Interface::ButtonsPanel::_redraw()
     _buttonNextHero.draw();
     _buttonHeroMovement.draw();
 
-    if ( Settings::Get().isSimultaneousTurnsEnabled() && _buttonHeroMovement.isEnabled() ) {
-        const Heroes * currentHero = GetFocusHeroes();
+    if ( isSimultaneousPlanning() ) {
+        // Simultaneous turns: this button always shows the undo icon. It removes the last stop of the route.
+        const bool isEvilInterface = conf.isEvilInterfaceEnabled();
+        const bool isPressed = _buttonHeroMovement.isEnabled() && _buttonHeroMovement.isPressed();
+        const fheroes2::Sprite undoButton
+            = makeUndoButton( Assets::getImage( isEvilInterface ? ICN::ADVEBTNS : ICN::ADVBTNS, isPressed ? 3 : 2 ), isPressed ? 1 : 0, isEvilInterface );
 
-        if ( currentHero != nullptr && currentHero->GetPath().isValidForMovement() ) {
-            // Simultaneous turns: this button undoes the last stop of the route
-            const int icnbtn = conf.isEvilInterfaceEnabled() ? ICN::ADVEBTNS : ICN::ADVBTNS;
-            const bool isPressed = _buttonHeroMovement.isPressed();
-            const fheroes2::Sprite undoButton = makeUndoButton( Assets::getImage( icnbtn, isPressed ? 3 : 2 ), isPressed ? 1 : 0 );
-
-            fheroes2::Blit( undoButton, fheroes2::Display::instance(), _heroMovementRect.x, _heroMovementRect.y );
-        }
+        fheroes2::Blit( undoButton, fheroes2::Display::instance(), _heroMovementRect.x, _heroMovementRect.y );
     }
 
     _buttonKingdom.draw();
@@ -398,7 +433,7 @@ fheroes2::GameMode Interface::ButtonsPanel::queueEventProcessing()
     else if ( le.isMouseRightButtonPressedInArea( _nextHeroRect ) ) {
         fheroes2::showStandardTextMessage( _( "Next Hero" ), _( "Select the next Hero." ), Dialog::ZERO );
     }
-    else if ( le.isMouseRightButtonPressedInArea( _heroMovementRect ) && Settings::Get().isSimultaneousTurnsEnabled() ) {
+    else if ( le.isMouseRightButtonPressedInArea( _heroMovementRect ) && isSimultaneousPlanning() ) {
         fheroes2::showStandardTextMessage( _( "Undo Last Stop" ), _( "Remove the last stop of the hero's route. Press and hold this button to remove the whole route." ), Dialog::ZERO );
     }
     else if ( le.isMouseRightButtonPressedInArea( _heroMovementRect ) ) {
@@ -434,7 +469,18 @@ void Interface::ButtonsPanel::_setButtonStatus()
 {
     Heroes * currentHero = GetFocusHeroes();
 
-    if ( currentHero && currentHero->GetPath().isValidForMovement() && currentHero->MayStillMove( false, true ) ) {
+    if ( isSimultaneousPlanning() ) {
+        // Undo button: active only while the hero has a plotted route.
+        _buttonHeroMovement.setICNIndexes( 2, 3 );
+
+        if ( currentHero && currentHero->GetPath().isValidForMovement() ) {
+            _buttonHeroMovement.enable();
+        }
+        else {
+            _buttonHeroMovement.disable();
+        }
+    }
+    else if ( currentHero && currentHero->GetPath().isValidForMovement() && currentHero->MayStillMove( false, true ) ) {
         // Move button: to move the hero by the specified path.
         _buttonHeroMovement.setICNIndexes( 2, 3 );
         _buttonHeroMovement.enable();

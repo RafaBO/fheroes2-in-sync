@@ -298,7 +298,8 @@ fheroes2::GameMode Interface::AdventureMap::EventEndTurn() const
 
     const Kingdom & myKingdom = world.GetKingdom( Settings::Get().CurrentColor() );
 
-    if ( !myKingdom.HeroesMayStillMove()
+    // Simultaneous turns: heroes walk after the turn ends, so there is nothing to warn about.
+    if ( isSimultaneousPlanning() || !myKingdom.HeroesMayStillMove()
          || Dialog::YES
                 == fheroes2::showStandardTextMessage( _( "End Turn" ), _( "One or more heroes may still move, are you sure you want to end your turn?" ),
                                                       Dialog::YES | Dialog::NO ) ) {
@@ -345,6 +346,9 @@ fheroes2::GameMode Interface::AdventureMap::EventFileDialog() const
 void Interface::AdventureMap::EventSystemDialog() const
 {
     fheroes2::showSystemOptionsDialog();
+
+    // The Simultaneous Turns option changes the picture of one of the buttons.
+    Interface::AdventureMap::Get().setRedraw( REDRAW_BUTTONS );
 }
 
 void Interface::AdventureMap::EventNextTown()

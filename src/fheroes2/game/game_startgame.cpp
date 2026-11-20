@@ -815,7 +815,7 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
         // Simultaneous turns (experimental, single human player only): the human plots routes, the computer players choose their routes,
         // and then all heroes walk together.
-        const bool isSimultaneousTurns = conf.isSimultaneousTurnsEnabled() && !isHotSeatGame && !isAutoPlaytest;
+        bool isSimultaneousTurns = conf.isSimultaneousTurnsEnabled() && !isHotSeatGame && !isAutoPlaytest;
         std::vector<Heroes *> simultaneousHeroes;
         PlayerColor simultaneousHumanColor = PlayerColor::NONE;
 
@@ -887,6 +887,9 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
                     _iconsPanel.setRedraw();
 
                     res = HumanTurn( isLoadedFromSave );
+
+                    // The player may have switched the option on or off during this turn.
+                    isSimultaneousTurns = conf.isSimultaneousTurnsEnabled() && !isHotSeatGame && !isAutoPlaytest;
 
                     if ( isSimultaneousTurns && res == fheroes2::GameMode::END_TURN ) {
                         simultaneousHumanColor = playerColor;
