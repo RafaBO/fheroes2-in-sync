@@ -187,6 +187,12 @@ namespace AI
             _forceTownPhase = force;
         }
 
+        // Simultaneous turns: true while the kingdom plans again after its heroes have walked once on the same day.
+        void setReplanningRound( const bool replanning )
+        {
+            _isReplanningRound = replanning;
+        }
+
         std::vector<Heroes *> takeDeferredHeroes()
         {
             std::vector<Heroes *> result;
@@ -287,6 +293,7 @@ namespace AI
 
         bool _deferHeroMovement{ false };
         bool _forceTownPhase{ false };
+        bool _isReplanningRound{ false };
         std::vector<Heroes *> _deferredHeroes;
 
         std::unordered_map<int32_t, MP2::MapObjectType> _mapActionObjects;

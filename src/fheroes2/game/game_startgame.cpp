@@ -1039,9 +1039,11 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
                     conf.SetCurrentColor( player->GetColor() );
 
                     AI::Planner::Get().setDeferHeroMovement( true );
+                    AI::Planner::Get().setReplanningRound( true );
 
                     res = AI::Planner::Get().KingdomTurn( aiKingdom );
 
+                    AI::Planner::Get().setReplanningRound( false );
                     AI::Planner::Get().setDeferHeroMovement( false );
 
                     const std::vector<Heroes *> plannedHeroes = AI::Planner::Get().takeDeferredHeroes();
@@ -1074,11 +1076,13 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
                 conf.SetCurrentColor( player->GetColor() );
 
                 AI::Planner::Get().setDeferHeroMovement( true );
+                AI::Planner::Get().setReplanningRound( true );
                 AI::Planner::Get().setForceTownPhase( true );
 
                 res = AI::Planner::Get().KingdomTurn( aiKingdom );
 
                 AI::Planner::Get().setForceTownPhase( false );
+                AI::Planner::Get().setReplanningRound( false );
                 AI::Planner::Get().setDeferHeroMovement( false );
 
                 // Their plans were only needed for the town part, the heroes plan again the next day.
@@ -1180,6 +1184,7 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
     fheroes2::Display & display = fheroes2::Display::instance();
 
     bool isAnyHeroMoving = true;
+    size_t tick = 0;
 
     while ( isAnyHeroMoving ) {
         if ( !le.HandleEvents( false, true ) ) {
@@ -1190,14 +1195,26 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
 
         isAnyHeroMoving = false;
 
-        // One step for every hero in a fixed order: human heroes first, then the computer heroes. A hero that steps onto a tile occupied by
-        // a rival hero attacks it, as in the normal game.
-        for ( Heroes * hero : walkers ) {
+        // One step for every hero. The hero who goes first changes with every step, so nobody is always first or last. A hero that steps onto a tile
+        // occupied by a rival hero attacks it, as in the normal game.
+        ++tick;
+
+        for ( size_t walkerNumber = 0; walkerNumber < walkers.size(); ++walkerNumber ) {
+            Heroes * hero = walkers[( walkerNumber + tick ) % walkers.size()];
+
             if ( !hero->isActive() ) {
                 continue;
             }
 
             if ( !hero->isMoveEnabled() ) {
+                hero->SetMove( false );
+                continue;
+            }
+
+            // The planned steps must start where the hero stands. If they do not (the object of an earlier stop was gone and the hero walked onto
+            // its tile), the rest of the plan is wrong. The hero stops and plans again later.
+            if ( hero->GetPath().GetFrontFrom() != hero->GetIndex() ) {
+                hero->GetPath().Reset();
                 hero->SetMove( false );
                 continue;
             }

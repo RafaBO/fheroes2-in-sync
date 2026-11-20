@@ -252,6 +252,17 @@ bool Heroes::_moveStep( const bool jumpToNextTile )
 
         _path.PopFront();
 
+        // Simultaneous turns: a stop that was planned as an object visited from the neighbouring tile may be an empty tile by now (the object was taken
+        // or a rival hero moved away). The hero then stands on the stop and the steps planned after it no longer start at his tile.
+        if ( !_path.empty() && _path.GetFrontFrom() != GetIndex() ) {
+            if ( !_waypoints.empty() ) {
+                rebuildWaypointPath();
+            }
+            else {
+                _path.Reset();
+            }
+        }
+
         // It is possible that the hero in the new position will be attacked and lose the battle before he can perform the action
         if ( isActive() ) {
             Action( nextStepIndex );

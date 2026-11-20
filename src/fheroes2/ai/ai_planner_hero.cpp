@@ -3224,7 +3224,7 @@ fheroes2::GameMode AI::Planner::HeroesTurn( VecHeroes & heroes, uint32_t & curre
             uint32_t regularMovementDist = _pathfinder.getDistance( bestTargetIndex );
             uint32_t dimensionDoorDist = Route::calculatePathPenalty( dimensionDoorPath );
 
-            if ( !_deferHeroMovement && shouldUseDimensionDoor( regularMovementDist, dimensionDoorDist ) ) {
+            if ( shouldUseDimensionDoor( regularMovementDist, dimensionDoorDist ) ) {
                 while ( shouldUseDimensionDoor( regularMovementDist, dimensionDoorDist ) ) {
                     assert( !dimensionDoorPath.empty() && bestHero->MayStillMove( false, false ) );
 
@@ -3251,25 +3251,36 @@ fheroes2::GameMode AI::Planner::HeroesTurn( VecHeroes & heroes, uint32_t & curre
                     // The rest of the path the hero should do by foot.
                     bestHero->GetPath().setPath( _pathfinder.buildPath( bestTargetIndex, true ) );
 
-                    const fheroes2::GameMode gameState = HeroesMove( *bestHero );
-                    if ( gameState != fheroes2::GameMode::END_TURN ) {
-                        moreTasksAvailable = false;
-                        return gameState;
+                    if ( _deferHeroMovement ) {
+                        // Simultaneous turns: the jump itself is instant, the rest of the way is walked together with the other heroes.
+                        if ( bestHero->GetPath().isValidForMovement() ) {
+                            _deferredHeroes.push_back( bestHero );
+                        }
+
+                        availableHeroes.erase( std::remove( availableHeroes.begin(), availableHeroes.end(), bestHero ), availableHeroes.end() );
+                    }
+                    else {
+                        const fheroes2::GameMode gameState = HeroesMove( *bestHero );
+                        if ( gameState != fheroes2::GameMode::END_TURN ) {
+                            moreTasksAvailable = false;
+                            return gameState;
+                        }
                     }
                 }
             }
             else {
                 bestHero->GetPath().setPath( _pathfinder.buildPath( bestTargetIndex, true ) );
 
-                if ( _deferHeroMovement ) {
+                // A route that starts with a teleport (Town Gate, Town Portal) is carried out at once, it is instant anyway.
+                if ( _deferHeroMovement && !bestHero->GetPath().isValidForTeleportation() ) {
                     // Simultaneous turns: remember the planned route, the hero will walk it together with all other heroes.
                     if ( bestHero->GetPath().isValidForMovement() ) {
                         _deferredHeroes.push_back( bestHero );
 
-                        // The target now belongs to this hero. Other heroes must not walk to the same place at the same time: whoever comes second
-                        // would find nothing. In the usual turn order this never happens because the first hero has already taken the object.
+                        // A one-time object (a pickup, a mine) now belongs to this hero. Other heroes must not walk to the same place at the same time:
+                        // whoever comes second would find nothing. In the usual turn order this never happens because the first hero has already taken it.
                         const MP2::MapObjectType targetType = world.getTile( bestTargetIndex ).getMainObjectType();
-                        if ( targetType != MP2::OBJ_CASTLE && targetType != MP2::OBJ_HERO ) {
+                        if ( MP2::isPickupObject( targetType ) || MP2::isCaptureObject( targetType ) ) {
                             _mapActionObjects.erase( bestTargetIndex );
                         }
                     }

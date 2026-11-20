@@ -685,14 +685,17 @@ fheroes2::GameMode AI::Planner::KingdomTurn( Kingdom & kingdom )
     for ( Heroes * hero : heroes ) {
         assert( hero != nullptr );
 
-        hero->ResetModes( Heroes::SLEEPER );
-        hero->setDimensionDoorUsage( 0 );
+        // Simultaneous turns: a planning round after the first one of the day must not reset the limits of the day or cast View All again.
+        if ( !_isReplanningRound ) {
+            hero->ResetModes( Heroes::SLEEPER );
+            hero->setDimensionDoorUsage( 0 );
+        }
 
         if ( !hero->Modes( Heroes::PATROL ) ) {
             ++availableHeroCount;
         }
 
-        if ( hero->CanCastSpell( Spell::VIEWALL ) && ( bestHeroToViewAll == nullptr || hero->HasSecondarySkill( Skill::Secondary::MYSTICISM ) ) ) {
+        if ( !_isReplanningRound && hero->CanCastSpell( Spell::VIEWALL ) && ( bestHeroToViewAll == nullptr || hero->HasSecondarySkill( Skill::Secondary::MYSTICISM ) ) ) {
             bestHeroToViewAll = hero;
         }
     }
@@ -797,7 +800,9 @@ fheroes2::GameMode AI::Planner::KingdomTurn( Kingdom & kingdom )
 
                                              const UltimateArtifact & art = world.GetUltimateArtifact();
 
-                                             return art.isPosition( hero->GetIndex() ) && isUltimateArtifactAvailableToHero( art, *hero );
+                                             // With simultaneous turns the planning is repeated during the day, the hero must still have all his movement points.
+                                             return art.isPosition( hero->GetIndex() ) && hero->GetMovePoints() == hero->GetMaxMovePoints() && hero->GetPath().empty()
+                                                    && isUltimateArtifactAvailableToHero( art, *hero );
                                          } );
          iter != heroes.end() ) {
         Heroes * hero = *iter;
