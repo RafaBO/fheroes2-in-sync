@@ -180,6 +180,13 @@ namespace AI
             _deferHeroMovement = defer;
         }
 
+        // Simultaneous turns: while heroes are still going to walk, building and recruiting in the towns waits until the walking is over. This makes
+        // the computer player finish the town part of the turn even if some heroes still have a plan.
+        void setForceTownPhase( const bool force )
+        {
+            _forceTownPhase = force;
+        }
+
         std::vector<Heroes *> takeDeferredHeroes()
         {
             std::vector<Heroes *> result;
@@ -279,6 +286,7 @@ namespace AI
         // The following member variables should not be saved or serialized
 
         bool _deferHeroMovement{ false };
+        bool _forceTownPhase{ false };
         std::vector<Heroes *> _deferredHeroes;
 
         std::unordered_map<int32_t, MP2::MapObjectType> _mapActionObjects;

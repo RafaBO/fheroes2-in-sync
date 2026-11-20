@@ -161,6 +161,19 @@ namespace Route
             erase( ++iter, cend() );
         }
 
+        // Cuts off and returns all the steps after the current step (the first in the queue).
+        std::list<Step> takeStepsAfterFront()
+        {
+            std::list<Step> rest;
+
+            if ( size() > 1 ) {
+                auto iter = begin();
+                rest.splice( rest.end(), *this, ++iter, end() );
+            }
+
+            return rest;
+        }
+
         void PopFront()
         {
             if ( empty() ) {

@@ -211,18 +211,37 @@ bool Heroes::_moveStep( const bool jumpToNextTile )
         _applyMovementPenalty( _path.GetFrontPenalty() );
 
         if ( !performMovement ) {
-            // If we are accessing an object located on a tile that we cannot step on, then this should be the last step of the path
-            assert( nextStepIndex == _path.GetDestinationIndex() );
+            // If we are accessing an object located on a tile that we cannot step on, then this should be the last step of the path.
+            // Simultaneous turns: the steps planned after this object are set aside and given back to the hero once the object has been visited.
+            std::list<Route::Step> remainingSteps = _path.takeStepsAfterFront();
 
             _path.PopFront();
             assert( _path.empty() );
 
+            if ( !_waypoints.empty() && _waypoints.front() == nextStepIndex ) {
+                _waypoints.erase( _waypoints.begin() );
+            }
+
+            const int32_t standingIndex = GetIndex();
+
             Action( nextStepIndex );
+
+            if ( !remainingSteps.empty() && isActive() && GetIndex() == standingIndex && remainingSteps.front().GetFrom() == standingIndex && !_waypoints.empty() ) {
+                _path.setPath( remainingSteps );
+            }
+            else {
+                _waypoints.clear();
+            }
 
             return;
         }
 
         Move2Dest( nextStepIndex );
+
+        if ( !_waypoints.empty() && _waypoints.front() == nextStepIndex ) {
+            // Simultaneous turns: the hero has reached one of the planned stops
+            _waypoints.erase( _waypoints.begin() );
+        }
 
         if ( isControlHuman() ) {
             // Update the radar map image in the area that is visible to the hero after his movement.

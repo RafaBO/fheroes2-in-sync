@@ -1239,25 +1239,35 @@ void Heroes::rebuildWaypointPath()
         return;
     }
 
-    // A stop on an object that the hero only visits from the neighbouring tile (a chest, a monster, another hero, and so on) always ends the route.
-    const auto endsRoute = []( const int32_t index ) { return MP2::isNeedStayFront( world.getTile( index ).getMainObjectType() ); };
+    // Some objects (pickups, monsters, other heroes) are visited from the neighbouring tile and the hero stays there. After such a stop
+    // the next part of the route starts from that neighbouring tile. Boats and castles move the hero somewhere else, so they end the route.
+    const auto staysInFront = []( const int32_t index ) {
+        const MP2::MapObjectType type = world.getTile( index ).getMainObjectType();
+
+        return MP2::isNeedStayFront( type ) && type != MP2::OBJ_BOAT;
+    };
+    const auto endsRoute = []( const int32_t index ) {
+        const MP2::MapObjectType type = world.getTile( index ).getMainObjectType();
+
+        return type == MP2::OBJ_BOAT || type == MP2::OBJ_CASTLE;
+    };
 
     size_t reachableStops = 1;
 
-    if ( !endsRoute( _waypoints.front() ) ) {
-        for ( size_t i = 1; i < _waypoints.size(); ++i ) {
-            std::list<Route::Step> leg = world.getPathFrom( *this, _waypoints[i - 1], _waypoints[i] );
-            if ( leg.empty() ) {
-                break;
-            }
-
-            fullPath.splice( fullPath.end(), leg );
-            ++reachableStops;
-
-            if ( endsRoute( _waypoints[i] ) ) {
-                break;
-            }
+    for ( size_t i = 1; i < _waypoints.size(); ++i ) {
+        if ( endsRoute( _waypoints[i - 1] ) ) {
+            break;
         }
+
+        const int32_t start = staysInFront( _waypoints[i - 1] ) ? fullPath.back().GetFrom() : _waypoints[i - 1];
+
+        std::list<Route::Step> leg = world.getPathFrom( *this, start, _waypoints[i] );
+        if ( leg.empty() ) {
+            break;
+        }
+
+        fullPath.splice( fullPath.end(), leg );
+        ++reachableStops;
     }
 
     _waypoints.resize( reachableStops );

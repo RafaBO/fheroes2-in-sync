@@ -3107,6 +3107,11 @@ fheroes2::GameMode AI::Planner::HeroesTurn( VecHeroes & heroes, uint32_t & curre
     for ( Heroes * hero : heroes ) {
         assert( hero != nullptr );
 
+        // Simultaneous turns: a hero who already has a plan for this round must not plan twice.
+        if ( _deferHeroMovement && std::find( _deferredHeroes.begin(), _deferredHeroes.end(), hero ) != _deferredHeroes.end() ) {
+            continue;
+        }
+
         addHeroToMove( hero, availableHeroes );
     }
 
@@ -3260,6 +3265,13 @@ fheroes2::GameMode AI::Planner::HeroesTurn( VecHeroes & heroes, uint32_t & curre
                     // Simultaneous turns: remember the planned route, the hero will walk it together with all other heroes.
                     if ( bestHero->GetPath().isValidForMovement() ) {
                         _deferredHeroes.push_back( bestHero );
+
+                        // The target now belongs to this hero. Other heroes must not walk to the same place at the same time: whoever comes second
+                        // would find nothing. In the usual turn order this never happens because the first hero has already taken the object.
+                        const MP2::MapObjectType targetType = world.getTile( bestTargetIndex ).getMainObjectType();
+                        if ( targetType != MP2::OBJ_CASTLE && targetType != MP2::OBJ_HERO ) {
+                            _mapActionObjects.erase( bestTargetIndex );
+                        }
                     }
 
                     availableHeroes.erase( std::remove( availableHeroes.begin(), availableHeroes.end(), bestHero ), availableHeroes.end() );

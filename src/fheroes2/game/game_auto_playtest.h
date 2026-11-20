@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -189,6 +190,23 @@ namespace fheroes2
             _playthroughResults.pop_back();
         }
 
+        // AI benchmark: a file where the state of every kingdom is written at the end of each day, and a label for the lines.
+        void setStatsFile( std::string path, std::string label )
+        {
+            _statsFile = std::move( path );
+            _statsLabel = std::move( label );
+        }
+
+        const std::string & getStatsFile() const
+        {
+            return _statsFile;
+        }
+
+        const std::string & getStatsLabel() const
+        {
+            return _statsLabel;
+        }
+
     private:
         AutoPlaytest() = default;
         ~AutoPlaytest() = default;
@@ -200,9 +218,18 @@ namespace fheroes2
         int32_t _animationSpeed{ animationLimit };
         bool _isAnimationEnabled{ true };
         bool _playEnvironmentSounds{ true };
+        std::string _statsFile;
+        std::string _statsLabel;
     };
 
     bool openMapAutoPlayTest();
+
+    // Developer tool: plays a whole map with computer players only, without any window interaction, and writes the state of every kingdom
+    // at the end of each day to a file. It is started by the FH2_AI_BENCH environment variable. Returns true if the variable was set.
+    bool runAiBenchmarkFromEnvironment();
+
+    // Writes the state of all kingdoms for the current day if the benchmark is running.
+    void logAiBenchmarkDay();
 
     void interruptAutoPlaytest();
 }

@@ -892,6 +892,14 @@ fheroes2::GameMode AI::Planner::KingdomTurn( Kingdom & kingdom )
 
     status.drawAITurnProgress( 9 );
 
+    // Simultaneous turns: the heroes of this kingdom are still going to walk, so the town part of the turn (recruiting, building, leaving troops
+    // in garrisons) is done later, when they have finished. Otherwise the heroes would leave with a weaker army and without the gold they find.
+    if ( _deferHeroMovement && !_forceTownPhase && !_deferredHeroes.empty() ) {
+        status.resetAITurnProgress();
+
+        return fheroes2::GameMode::END_TURN;
+    }
+
     // Sync the list of castles (if new ones were captured during the turn)
     if ( castles.size() != sortedCastleList.size() ) {
         evaluateRegionSafety();

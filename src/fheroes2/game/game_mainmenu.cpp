@@ -43,6 +43,7 @@
 #include "editor_mainmenu.h"
 #include "game.h" // IWYU pragma: associated
 #include "game_assets.h"
+#include "game_auto_playtest.h"
 #include "game_delays.h"
 #include "game_exit.h"
 #include "game_hotkeys.h"
@@ -122,6 +123,11 @@ namespace
 
 void Game::runMainGameLoop()
 {
+    // Developer tool: a computer-only benchmark that never shows the menu.
+    if ( fheroes2::runAiBenchmarkFromEnvironment() ) {
+        return;
+    }
+
     fheroes2::showTeamInfo();
     for ( const char * logo : { "NWCLOGO.SMK", "CYLOGO.SMK", "H2XINTRO.SMK" } ) {
         Video::ShowVideo( { { logo, Video::VideoControl::PLAY_CUTSCENE } } );

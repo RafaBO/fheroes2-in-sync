@@ -20,15 +20,27 @@
 
 #include "game_auto_playtest.h"
 
+#include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 
+#include "army.h"
 #include "audio.h"
 #include "audio_manager.h"
 #include "color.h"
+#include "difficulty.h"
+#include "heroes.h"
+#include "kingdom.h"
+#include "resource.h"
+#include "ui_language.h"
 #include "cursor.h"
 #include "dialog.h"
 #include "game.h"
@@ -648,6 +660,140 @@ namespace fheroes2
     {
         static AutoPlaytest playtest;
         return playtest;
+    }
+
+    void logAiBenchmarkDay()
+    {
+        const AutoPlaytest & playtest = AutoPlaytest::instance();
+        if ( playtest.getStatsFile().empty() ) {
+            return;
+        }
+
+        std::ofstream out( playtest.getStatsFile(), std::ios::app );
+        if ( !out ) {
+            return;
+        }
+
+        const int32_t tileCount = world.w() * world.h();
+
+        for ( const Player * player : Settings::Get().GetPlayers() ) {
+            const PlayerColor color = player->GetColor();
+            const Kingdom & kingdom = world.GetKingdom( color );
+
+            if ( !kingdom.isPlay() ) {
+                continue;
+            }
+
+            int32_t exploredTiles = 0;
+            for ( int32_t i = 0; i < tileCount; ++i ) {
+                if ( !world.getTile( i ).isFog( color ) ) {
+                    ++exploredTiles;
+                }
+            }
+
+            double armyStrength = 0.0;
+            int32_t levels = 0;
+            int32_t idleHeroes = 0;
+            double movementUsed = 0.0;
+
+            for ( const Heroes * hero : kingdom.GetHeroes() ) {
+                armyStrength += hero->GetArmy().GetStrength();
+                levels += hero->GetLevel();
+
+                const uint32_t maxPoints = hero->GetMaxMovePoints();
+                if ( maxPoints > 0 ) {
+                    const uint32_t usedPoints = maxPoints > hero->GetMovePoints() ? maxPoints - hero->GetMovePoints() : 0;
+                    movementUsed += static_cast<double>( usedPoints ) / maxPoints;
+
+                    if ( usedPoints == 0 ) {
+                        ++idleHeroes;
+                    }
+                }
+            }
+
+            const Funds & funds = kingdom.GetFunds();
+            const int32_t otherResources = funds.wood + funds.mercury + funds.ore + funds.sulfur + funds.crystal + funds.gems;
+            const size_t heroCount = kingdom.GetHeroes().size();
+
+            out << playtest.getStatsLabel() << ',' << world.CountDay() << ',' << Color::String( color ) << ',' << heroCount << ',' << kingdom.GetCastles().size() << ','
+                << funds.gold << ',' << otherResources << ',' << kingdom.GetIncome().gold << ',' << static_cast<int32_t>( armyStrength ) << ',' << levels << ','
+                << ( exploredTiles * 100 / std::max( tileCount, 1 ) ) << ',' << ( heroCount > 0 ? static_cast<int32_t>( movementUsed * 100.0 / static_cast<double>( heroCount ) ) : 0 )
+                << ',' << idleHeroes << '\n';
+        }
+    }
+
+    bool runAiBenchmarkFromEnvironment()
+    {
+        const char * raw = std::getenv( "FH2_AI_BENCH" );
+        if ( raw == nullptr ) {
+            return false;
+        }
+
+        // The setting looks like: map=/path/map.fh2m;days=30;sim=1;out=/path/stats.csv;label=sim1_run1
+        std::map<std::string, std::string> options;
+        {
+            std::istringstream stream( raw );
+            std::string item;
+            while ( std::getline( stream, item, ';' ) ) {
+                const size_t separator = item.find( '=' );
+                if ( separator != std::string::npos ) {
+                    options[item.substr( 0, separator )] = item.substr( separator + 1 );
+                }
+            }
+        }
+
+        const std::string mapPath = options["map"];
+        const int32_t days = std::max( 1, std::atoi( options["days"].c_str() ) );
+        const bool isSimultaneous = options["sim"] == "1";
+
+        Settings & conf = Settings::Get();
+
+        Maps::FileInfo mapInfo;
+        const bool isResurrectionMap = mapPath.size() > 5 && mapPath.compare( mapPath.size() - 5, 5, ".fh2m" ) == 0;
+        const bool isLoaded = isResurrectionMap ? mapInfo.readResurrectionMap( mapPath, false, getCurrentLanguage() ) : mapInfo.readMP2Map( mapPath, false );
+        if ( !isLoaded ) {
+            std::cerr << "AI benchmark: cannot read the map " << mapPath << std::endl;
+            return true;
+        }
+
+        conf.setSimultaneousTurns( isSimultaneous );
+        conf.setCurrentMapInfo( mapInfo );
+        conf.SetGameDifficulty( Difficulty::NORMAL );
+        conf.SetAIMoveSpeed( 0 );
+        Game::UpdateGameSpeed();
+
+        auto & autoPlaytest = AutoPlaytest::instance();
+        autoPlaytest.reset( conf.GetPlayers().GetColors() );
+        autoPlaytest.setMaxDaysInPlaythrough( days );
+        autoPlaytest.enableAnimation( false );
+        autoPlaytest.enableSounds( false );
+        autoPlaytest.setStatsFile( options["out"], options["label"] );
+
+        conf.GetPlayers().SetStartGame();
+
+        const bool isMapLoaded = isResurrectionMap ? world.loadResurrectionMap( mapInfo.filename )
+                                                   : world.LoadMapMP2( mapInfo.filename, mapInfo.version == GameVersion::SUCCESSION_WARS );
+        if ( !isMapLoaded ) {
+            std::cerr << "AI benchmark: cannot load the map " << mapPath << std::endl;
+            return true;
+        }
+
+        conf.SetGameType( Game::TYPE_AUTO_PLAYTEST );
+
+        const auto startTime = std::chrono::steady_clock::now();
+
+        Game::StartGame();
+
+        const double seconds = std::chrono::duration<double>( std::chrono::steady_clock::now() - startTime ).count();
+
+        std::ofstream out( options["out"], std::ios::app );
+        out << "#END," << options["label"] << ",day=" << world.CountDay() << ",seconds=" << static_cast<int32_t>( seconds );
+        for ( const auto & info : autoPlaytest.getResults().back() ) {
+            out << ',' << Color::String( info.color ) << ( info.state == AutoPlaytest::PlayerState::LOSER ? "=lost_day_" + std::to_string( info.dayOfState ) : std::string( "=alive" ) );
+        }
+        out << '\n';
+
+        return true;
     }
 
     void interruptAutoPlaytest()
