@@ -1165,12 +1165,13 @@ void Heroes::ActionNewDay()
 {
     const uint32_t maxMovePoints = GetMaxMovePoints();
 
-    // Simultaneous turns with the carry option: what the hero did not use today (because his route was blocked or the map was not explored) is added
-    // to tomorrow's movement, but never more than one extra day's worth.
+    // Simultaneous turns with the carry option: movement the hero could not use because a fight with neutral monsters stopped him on a route into the fog
+    // is added to tomorrow's movement, but never more than one extra day's worth.
     const Settings & conf = Settings::Get();
     const uint32_t carriedMovePoints
-        = ( conf.isSimultaneousTurnsEnabled() && conf.isCarryMovementEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) ) ? std::min( _movePoints, maxMovePoints ) : 0;
+        = ( conf.isSimultaneousTurnsEnabled() && conf.isCarryMovementEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) ) ? std::min( _carriedMovePoints, maxMovePoints ) : 0;
 
+    _carriedMovePoints = 0;
     _movePoints = maxMovePoints + carriedMovePoints;
 
     if ( world.CountDay() > 1 ) {
@@ -1228,7 +1229,7 @@ void Heroes::_replenishSpellPoints()
     }
 }
 
-void Heroes::rebuildWaypointPath()
+void Heroes::rebuildWaypointPath( const bool isDuringWalk /* = false */ )
 {
     _isExploringFog = false;
 
@@ -1244,28 +1245,30 @@ void Heroes::rebuildWaypointPath()
 
     const PlayerColor color = GetColor();
 
-    // A tile in the fog is a stop the player chose without knowing the ground. The route leads as far towards it as the explored map allows.
+    // A tile in the fog is a stop the player chose without knowing the ground
     const auto isInFog = [color]( const int32_t index ) { return world.getTile( index ).isFog( color ); };
 
-    std::list<Route::Step> fullPath = world.getPath( *this, _waypoints.front() );
-    if ( fullPath.empty() && isInFog( _waypoints.front() ) ) {
-        fullPath = world.getPathTowards( *this, _waypoints.front() );
-
-        _isExploringFog = true;
-
-        if ( fullPath.empty() ) {
-            // Nothing is nearer to the stop than the hero is. He waits; the stop stays and is tried again when the map is uncovered.
-            _path.Reset();
-            _waypoints.resize( 1 );
-            return;
+    // A tile the player knows and where a fight with neutral monsters would start (the monster itself or a tile it guards). Monsters the player cannot see do
+    // not count, and neither do monsters the hero is going to defeat earlier on the route.
+    const auto isFightTile = [&isInFog]( const int32_t index, const std::vector<int32_t> & clearedMonsters ) {
+        if ( isInFog( index ) ) {
+            return false;
         }
-    }
 
-    if ( fullPath.empty() ) {
-        _waypoints.clear();
-        _path.Reset();
-        return;
-    }
+        const auto isCleared = [&clearedMonsters]( const int32_t monster ) { return std::find( clearedMonsters.begin(), clearedMonsters.end(), monster ) != clearedMonsters.end(); };
+
+        if ( world.getTile( index ).getMainObjectType() == MP2::OBJ_MONSTER ) {
+            return !isCleared( index );
+        }
+
+        for ( const int32_t monster : Maps::getMonstersProtectingTile( index ) ) {
+            if ( !isInFog( monster ) && !isCleared( monster ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    };
 
     // Some objects (pickups, monsters, other heroes) are visited from the neighbouring tile and the hero stays there. After such a stop
     // the next part of the route starts from that neighbouring tile. Boats and castles move the hero somewhere else, so they end the route.
@@ -1288,12 +1291,86 @@ void Heroes::rebuildWaypointPath()
         return type == MP2::OBJ_BOAT || type == MP2::OBJ_CASTLE;
     };
 
+    // Set when the only thing in the way to a stop in the fog is a fight with neutral monsters
+    bool isBlockedByFight = false;
+
+    // Plans one part of the route. Through ground the player has not explored the route assumes free land; as the hero walks and uncovers the map,
+    // the route is planned again from where he stands, so obstacles that turn up are avoided.
+    const auto planLeg = [this, &isInFog, &isFightTile, &isBlockedByFight]( const int32_t start, const int32_t target, const bool isFirstLeg,
+                                                                           const std::vector<int32_t> & clearedMonsters ) {
+        if ( !isInFog( target ) ) {
+            // A stop that was chosen in the fog and is known now
+            if ( std::find( _fogStops.begin(), _fogStops.end(), target ) != _fogStops.end() ) {
+                const MP2::MapObjectType type = world.getTile( target ).getMainObjectType();
+
+                // The player chose unknown ground. If an object turned up there (a monster, a castle, a pickup...), the hero goes up to it but does not meet it.
+                if ( type != MP2::OBJ_NONE && ( MP2::isInGameActionObject( type ) || MP2::isNeedStayFront( type ) || type == MP2::OBJ_CASTLE ) ) {
+                    return world.getPathFrom( *this, start, target, clearedMonsters, PlayerWorldPathfinder::PlanningMode::NEAREST_ONLY );
+                }
+
+                // The route may still lead through ground the player has not seen. If the stop turned out to be blocked terrain, the hero goes to the nearest
+                // place he can reach.
+                std::list<Route::Step> path = world.getPathFrom( *this, start, target, clearedMonsters, PlayerWorldPathfinder::PlanningMode::ASSUME_FREE_FOG );
+                if ( path.empty() ) {
+                    path = world.getPathFrom( *this, start, target, clearedMonsters, PlayerWorldPathfinder::PlanningMode::NORMAL_OR_NEAREST );
+                }
+
+                return path;
+            }
+
+            return isFirstLeg ? world.getPath( *this, target ) : world.getPathFrom( *this, start, target, clearedMonsters, PlayerWorldPathfinder::PlanningMode::NORMAL );
+        }
+
+        std::list<Route::Step> path = world.getPathFrom( *this, start, target, clearedMonsters, PlayerWorldPathfinder::PlanningMode::ASSUME_FREE_FOG );
+        if ( !path.empty() ) {
+            return path;
+        }
+
+        // Nothing leads there without a fight? Then the hero goes right up to the first fight and stops.
+        const std::list<Route::Step> pathThroughFights
+            = world.getPathFrom( *this, start, target, clearedMonsters, PlayerWorldPathfinder::PlanningMode::ASSUME_FREE_FOG_IGNORING_MONSTERS );
+        if ( pathThroughFights.empty() ) {
+            return path;
+        }
+
+        isBlockedByFight = true;
+
+        for ( const Route::Step & step : pathThroughFights ) {
+            if ( isFightTile( step.GetIndex(), clearedMonsters ) ) {
+                break;
+            }
+
+            path.push_back( step );
+        }
+
+        return path;
+    };
+
+    std::list<Route::Step> fullPath = planLeg( GetIndex(), _waypoints.front(), true, {} );
+
+    if ( isInFog( _waypoints.front() ) ) {
+        _isExploringFog = true;
+    }
+
+    if ( fullPath.empty() && !isBlockedByFight ) {
+        if ( _isExploringFog ) {
+            // Enclosed: the hero waits, the stop stays and is tried again later
+            _path.Reset();
+            _waypoints.resize( 1 );
+            return;
+        }
+
+        clearWaypoints();
+        _path.Reset();
+        return;
+    }
+
     size_t reachableStops = 1;
 
     // Monsters the hero is going to fight on the way. When he wins, the tiles they guard are free for the rest of the route.
     std::vector<int32_t> clearedMonsters;
 
-    for ( size_t i = 1; i < _waypoints.size() && !_isExploringFog; ++i ) {
+    for ( size_t i = 1; i < _waypoints.size() && !_isExploringFog && !fullPath.empty(); ++i ) {
         if ( endsRoute( _waypoints[i - 1] ) ) {
             break;
         }
@@ -1304,34 +1381,66 @@ void Heroes::rebuildWaypointPath()
 
         const int32_t start = staysInFront( _waypoints[i - 1] ) ? fullPath.back().GetFrom() : _waypoints[i - 1];
 
-        std::list<Route::Step> leg = world.getPathFrom( *this, start, _waypoints[i], clearedMonsters, isInFog( _waypoints[i] ) );
-        if ( leg.empty() ) {
+        std::list<Route::Step> leg = planLeg( start, _waypoints[i], false, clearedMonsters );
+
+        if ( isInFog( _waypoints[i] ) ) {
+            // The route ends in the fog: the later part cannot be planned before the map is uncovered. If nothing can be planned for now, the stop is kept
+            // and is tried again when the hero gets there.
+            _isExploringFog = true;
+
+            if ( leg.empty() ) {
+                reachableStops = i + 1;
+                break;
+            }
+        }
+        else if ( leg.empty() ) {
             break;
         }
 
         fullPath.splice( fullPath.end(), leg );
         ++reachableStops;
-
-        // The route ends in the fog: the later part cannot be planned before the map is uncovered.
-        if ( isInFog( _waypoints[i] ) ) {
-            _isExploringFog = true;
-        }
-    }
-
-    // The first stop itself may be in the fog and reachable only partly
-    if ( !_isExploringFog && isInFog( _waypoints.front() ) ) {
-        _isExploringFog = true;
     }
 
     _waypoints.resize( reachableStops );
     _path.setPath( fullPath );
 
+    // A route that crosses ground the player has not explored is planned again with every step
+    if ( !_isExploringFog ) {
+        _isExploringFog = std::any_of( fullPath.begin(), fullPath.end(), [&isInFog]( const Route::Step & step ) { return isInFog( step.GetIndex() ); } );
+    }
+
+    // Stops that are no longer part of the route are no longer remembered as chosen in the fog
+    _fogStops.erase( std::remove_if( _fogStops.begin(), _fogStops.end(),
+                                     [this]( const int32_t index ) { return std::find( _waypoints.begin(), _waypoints.end(), index ) == _waypoints.end(); } ),
+                     _fogStops.end() );
+
     if ( !_path.isValidForMovement() ) {
         _path.Reset();
 
-        if ( !_isExploringFog ) {
-            _waypoints.clear();
+        // The hero stands right in front of a fight with neutral monsters while walking towards the fog: the movement he did not use is kept for the next
+        // day (if the player has chosen so), as it was lost only because the way was not known in advance.
+        if ( isBlockedByFight && isDuringWalk && !_isFightKnownAtPlanning ) {
+            storeMovePointsForNextDay();
         }
+
+        if ( !_isExploringFog ) {
+            clearWaypoints();
+        }
+    }
+
+    // Remember whether the player knew about the fight when the route was planned. A fight that was in plain view then is the player's own business.
+    if ( !isDuringWalk ) {
+        _isFightKnownAtPlanning = isBlockedByFight;
+    }
+}
+
+void Heroes::storeMovePointsForNextDay()
+{
+    const Settings & conf = Settings::Get();
+
+    if ( conf.isSimultaneousTurnsEnabled() && conf.isCarryMovementEnabled() ) {
+        // One extra day at most, so the hero cannot save up movement
+        _carriedMovePoints = std::min( _movePoints, GetMaxMovePoints() );
     }
 }
 
@@ -1375,6 +1484,10 @@ void Heroes::addWaypoint( const int32_t dstIdx )
         if ( !_path.isValidForMovement() ) {
             _waypoints.push_back( dstIdx );
 
+            if ( world.getTile( dstIdx ).isFog( GetColor() ) ) {
+                _fogStops.push_back( dstIdx );
+            }
+
             rebuildWaypointPath();
 
             return;
@@ -1389,11 +1502,20 @@ void Heroes::addWaypoint( const int32_t dstIdx )
 
     _waypoints.push_back( dstIdx );
 
+    if ( world.getTile( dstIdx ).isFog( GetColor() ) ) {
+        _fogStops.push_back( dstIdx );
+    }
+
     rebuildWaypointPath();
 }
 
 void Heroes::calculatePath( int32_t dstIdx )
 {
+    // The rest of the route is set aside while the hero visits an object and is given back afterwards
+    if ( _isRouteSetAside ) {
+        return;
+    }
+
     if ( dstIdx < 0 ) {
         if ( !_waypoints.empty() ) {
             // Recalculating an existing route with several stops. If something has cancelled the route in the meantime, the stops are forgotten.

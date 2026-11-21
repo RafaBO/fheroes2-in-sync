@@ -141,18 +141,35 @@ public:
 
     // Same as buildPath(), but the path starts at 'startIndex' instead of the hero's own tile and the hero is assumed to have all its movement points.
     // Used to plot routes with several stops.
-    // 'clearedMonsters' are monsters the hero is going to defeat earlier on the route: the tiles they guard are free for this calculation. If
-    // 'towardsIfUnreachable' is set and the target cannot be reached (it lies in the fog), the path leads to the reachable tile nearest to it.
-    std::list<Route::Step> buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex, const std::vector<int32_t> & clearedMonsters,
-                                          const bool towardsIfUnreachable );
+    // 'clearedMonsters' are monsters the hero is going to defeat earlier on the route: the tiles they guard are free for this calculation.
+    enum class PlanningMode
+    {
+        // Only what the player knows: the usual rules.
+        NORMAL,
+        // The usual rules, but if the target cannot be reached (the stop was chosen in the fog and turned out to be a mountain, water and the like), the path
+        // leads to the nearest tile that can be reached.
+        NORMAL_OR_NEAREST,
+        // The path leads to the nearest tile that can be reached, even if the target itself could be reached (it holds an object the player did not know about).
+        NEAREST_ONLY,
+        // Unexplored ground is assumed to be free land (the hero finds out what is really there when he gets close). Known monsters still guard their tiles.
+        ASSUME_FREE_FOG,
+        // As above, but known neutral monsters and their guard zones are ignored. Used to find out whether a fight is the only thing in the way.
+        ASSUME_FREE_FOG_IGNORING_MONSTERS
+    };
 
-    // Builds a path to the reachable tile nearest to 'targetIndex' (a plain tile without an object), but only if it is nearer than the start. Returns an empty
-    // path if there is none.
-    std::list<Route::Step> buildPathTowards( const int targetIndex ) const;
+    std::list<Route::Step> buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex, const std::vector<int32_t> & clearedMonsters,
+                                          const PlanningMode mode );
 
 private:
     // Follows regular passability rules (for the human player)
     void processCurrentNode( std::vector<int> & nodesToExplore, const int currentNodeIdx ) override;
+
+    // Builds a path to the reachable plain tile nearest to 'targetIndex', but only if it is nearer than the start. Returns an empty path if there is none.
+    std::list<Route::Step> buildPathTowards( const int targetIndex ) const;
+
+    bool isMovementAllowed( const int from, const int direction ) const override;
+
+    uint32_t getMovementPenalty( const int from, const int to, const int direction ) const override;
 
     // Returns the maximum number of movement points. This class is not intended for planning paths passing both on
     // land and on water at the same time, so the maximum number of movement points corresponding to the type of
@@ -166,6 +183,10 @@ private:
 
     // Monsters whose guard zones are ignored (only set while a path with several stops is built).
     std::vector<int32_t> _clearedMonsters;
+
+    // Only set while a path through unexplored ground is built.
+    bool _isFogAssumedFree{ false };
+    bool _areMonstersIgnored{ false };
 };
 
 class AIWorldPathfinder final : public WorldPathfinder

@@ -535,6 +535,7 @@ public:
     void clearWaypoints()
     {
         _waypoints.clear();
+        _fogStops.clear();
         _isExploringFog = false;
     }
 
@@ -547,7 +548,7 @@ public:
     // Simultaneous turns: plans the route again from the hero's current tile (the steps taken so far may have uncovered the map).
     void replanWaypointPath()
     {
-        rebuildWaypointPath();
+        rebuildWaypointPath( true );
     }
 
     int GetDirection() const
@@ -815,7 +816,21 @@ private:
     std::vector<int32_t> _waypoints;
     bool _isExploringFog{ false };
 
-    void rebuildWaypointPath();
+    // Stops that the player chose in unexplored ground.
+    std::vector<int32_t> _fogStops;
+
+    // Movement points kept for the next day (simultaneous turns with the carry option). Not saved.
+    uint32_t _carriedMovePoints{ 0 };
+
+    // True if the player knew about a fight with neutral monsters in the way when the route was planned.
+    bool _isFightKnownAtPlanning{ false };
+
+    // True while the rest of the route is set aside because the hero is visiting an object.
+    bool _isRouteSetAside{ false };
+
+    void rebuildWaypointPath( const bool isDuringWalk = false );
+
+    void storeMovePointsForNextDay();
 
     std::list<IndexObject> _visitedObjects;
 

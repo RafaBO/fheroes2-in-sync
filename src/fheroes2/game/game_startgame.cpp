@@ -1152,6 +1152,28 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
 namespace
 {
+    // A route through unexplored ground assumes free land. Once the map is uncovered the next step of the route may turn out to lead onto ground the hero
+    // cannot enter: then the route has to be planned again.
+    bool isFrontStepPassable( const Heroes & hero )
+    {
+        const Route::Path & path = hero.GetPath();
+        if ( path.empty() ) {
+            return false;
+        }
+
+        const int direction = path.GetFrontDirection();
+        const int32_t from = hero.GetIndex();
+
+        if ( !Maps::isValidDirection( from, direction ) ) {
+            return false;
+        }
+
+        const Maps::Tile & fromTile = world.getTile( from );
+        const Maps::Tile & toTile = world.getTile( Maps::GetDirectionIndex( from, direction ) );
+
+        return fromTile.isPassableTo( direction ) && toTile.isPassableFrom( Direction::Reflect( direction ), hero.isShipMaster(), true, hero.GetColor() );
+    }
+
     // Simultaneous turns: other heroes move while a hero follows a route planned earlier, so the map may have changed in between (a boat appeared, a rival
     // hero or a monster moved into the way). Returns false if the next step of the route should not be taken any more.
     bool isNextStepStillValid( const Heroes & hero )
@@ -1238,6 +1260,21 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
                 continue;
             }
 
+            if ( !hero->isControlAI() && !isFrontStepPassable( *hero ) ) {
+                // The route was planned through ground that was not known. Plan it again from here.
+                hero->replanWaypointPath();
+
+                if ( !hero->GetPath().isValidForMovement() || !isFrontStepPassable( *hero ) ) {
+                    hero->GetPath().Reset();
+                    hero->SetMove( false );
+                }
+                else {
+                    isAnyHeroMoving = true;
+                }
+
+                continue;
+            }
+
             if ( !isNextStepStillValid( *hero ) ) {
                 hero->GetPath().Reset();
                 hero->SetMove( false );
@@ -1261,6 +1298,14 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
             else if ( hero->isActive() ) {
                 hero->SetMove( false );
             }
+        }
+
+        // The selected hero may have been defeated during this step. The selection moves to another hero (or a castle), otherwise the screen would be
+        // drawn for a hero that is gone.
+        if ( GetFocusType() == GameFocus::UNSEL || ( GetFocusHeroes() != nullptr && !GetFocusHeroes()->isActive() ) ) {
+            ResetFocus( GameFocus::HEROES, true );
+
+            setRedraw( REDRAW_BUTTONS );
         }
 
         if ( Heroes * focusHero = GetFocusHeroes(); focusHero != nullptr && focusHero->isActive() ) {

@@ -224,13 +224,17 @@ bool Heroes::_moveStep( const bool jumpToNextTile )
 
             const int32_t standingIndex = GetIndex();
 
+            _isRouteSetAside = true;
+
             Action( nextStepIndex );
+
+            _isRouteSetAside = false;
 
             if ( !remainingSteps.empty() && isActive() && GetIndex() == standingIndex && remainingSteps.front().GetFrom() == standingIndex && !_waypoints.empty() ) {
                 _path.setPath( remainingSteps );
             }
             else {
-                _waypoints.clear();
+                clearWaypoints();
             }
 
             return;
@@ -241,6 +245,10 @@ bool Heroes::_moveStep( const bool jumpToNextTile )
         if ( !_waypoints.empty() && _waypoints.front() == nextStepIndex ) {
             // Simultaneous turns: the hero has reached one of the planned stops
             _waypoints.erase( _waypoints.begin() );
+
+            if ( _waypoints.empty() ) {
+                clearWaypoints();
+            }
         }
 
         if ( isControlHuman() ) {
@@ -256,7 +264,7 @@ bool Heroes::_moveStep( const bool jumpToNextTile )
         // or a rival hero moved away). The hero then stands on the stop and the steps planned after it no longer start at his tile.
         if ( _isExploringFog && !_waypoints.empty() ) {
             // Simultaneous turns: the last stop is in unexplored territory. Every step may uncover more of the map, so the route is planned again.
-            rebuildWaypointPath();
+            rebuildWaypointPath( true );
         }
         else if ( !_path.empty() && _path.GetFrontFrom() != GetIndex() ) {
             if ( !_waypoints.empty() ) {

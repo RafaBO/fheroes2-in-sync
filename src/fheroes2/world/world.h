@@ -497,10 +497,9 @@ public:
 
     uint32_t getDistance( const Heroes & hero, int targetIndex );
     std::list<Route::Step> getPath( const Heroes & hero, int targetIndex );
-    // A path that starts at 'startIndex' (see PlayerWorldPathfinder::buildPathFrom). 'towardsIfUnreachable' is for targets in the fog.
-    std::list<Route::Step> getPathFrom( const Heroes & hero, int startIndex, int targetIndex, const std::vector<int32_t> & clearedMonsters, bool towardsIfUnreachable );
-    // A path from the hero's own tile to the reachable tile nearest to a target in the fog.
-    std::list<Route::Step> getPathTowards( const Heroes & hero, int targetIndex );
+    // A path that starts at 'startIndex' (see PlayerWorldPathfinder::buildPathFrom), also through ground the player has not explored yet.
+    std::list<Route::Step> getPathFrom( const Heroes & hero, int startIndex, int targetIndex, const std::vector<int32_t> & clearedMonsters,
+                                        PlayerWorldPathfinder::PlanningMode mode );
     void resetPathfinder();
 
     void ComputeStaticAnalysis();

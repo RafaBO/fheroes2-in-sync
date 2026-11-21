@@ -498,7 +498,7 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPath( const int targetIndex )
 }
 
 std::list<Route::Step> PlayerWorldPathfinder::buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex, const std::vector<int32_t> & clearedMonsters,
-                                                             const bool towardsIfUnreachable )
+                                                             const PlanningMode mode )
 {
     if ( !Maps::isValidAbsIndex( startIndex ) || !Maps::isValidAbsIndex( targetIndex ) ) {
         return {};
@@ -508,23 +508,33 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPathFrom( const Heroes & hero
     const auto newSettings = std::make_tuple( startIndex, hero.GetColor(), hero.GetMaxMovePoints(),
                                               static_cast<uint8_t>( hero.GetLevelSkill( Skill::Secondary::PATHFINDING ) ), hero.GetMaxMovePoints() );
 
-    // The guard zones of the monsters to be defeated change the result, so such a calculation is never reused.
     _clearedMonsters = clearedMonsters;
+    _isFogAssumedFree = ( mode == PlanningMode::ASSUME_FREE_FOG || mode == PlanningMode::ASSUME_FREE_FOG_IGNORING_MONSTERS );
+    _areMonstersIgnored = ( mode == PlanningMode::ASSUME_FREE_FOG_IGNORING_MONSTERS );
 
-    if ( currentSettings != newSettings || !_clearedMonsters.empty() ) {
+    // These special calculations are never reused: they differ from the ordinary one for the same start.
+    const bool isSpecial = !_clearedMonsters.empty() || _isFogAssumedFree;
+
+    if ( currentSettings != newSettings || isSpecial ) {
         currentSettings = newSettings;
 
         processWorldMap();
     }
 
-    std::list<Route::Step> path = buildPath( targetIndex );
-    if ( path.empty() && towardsIfUnreachable ) {
+    std::list<Route::Step> path;
+    if ( mode != PlanningMode::NEAREST_ONLY ) {
+        path = buildPath( targetIndex );
+    }
+
+    if ( path.empty() && ( mode == PlanningMode::NORMAL_OR_NEAREST || mode == PlanningMode::NEAREST_ONLY ) ) {
         path = buildPathTowards( targetIndex );
     }
 
-    if ( !_clearedMonsters.empty() ) {
+    if ( isSpecial ) {
         // Do not let the next call reuse this result.
         _clearedMonsters.clear();
+        _isFogAssumedFree = false;
+        _areMonstersIgnored = false;
         _pathStart = -1;
     }
 
@@ -543,7 +553,7 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPathTowards( const int target
 
     for ( size_t i = 0; i < _cache.size(); ++i ) {
         const int index = static_cast<int>( i );
-        if ( index == _pathStart || _cache[i]._cost == 0 || !isTileAvailableForWalkThrough( index, fromWater ) ) {
+        if ( index == _pathStart || _cache[i]._cost == 0 || world.getTile( index ).isFog( _color ) || !isTileAvailableForWalkThrough( index, fromWater ) ) {
             continue;
         }
 
@@ -562,17 +572,74 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPathTowards( const int target
     return buildPath( bestIndex );
 }
 
+bool PlayerWorldPathfinder::isMovementAllowed( const int from, const int direction ) const
+{
+    if ( _isFogAssumedFree && Maps::isValidDirection( from, direction ) ) {
+        const Maps::Tile & fromTile = world.getTile( from );
+        const Maps::Tile & toTile = world.getTile( Maps::GetDirectionIndex( from, direction ) );
+
+        const bool isFromInFog = fromTile.isFog( _color );
+        const bool isToInFog = toTile.isFog( _color );
+
+        if ( isFromInFog || isToInFog ) {
+            // Only the tiles the player has seen decide what is possible. Unexplored ground is assumed to be free land.
+            if ( !isFromInFog && ( fromTile.isWater() || !fromTile.isPassableTo( direction ) ) ) {
+                return false;
+            }
+
+            if ( !isToInFog && !toTile.isPassableFrom( Direction::Reflect( direction ), false, true, _color ) ) {
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    return WorldPathfinder::isMovementAllowed( from, direction );
+}
+
+uint32_t PlayerWorldPathfinder::getMovementPenalty( const int from, const int to, const int direction ) const
+{
+    if ( _isFogAssumedFree && ( world.getTile( from ).isFog( _color ) || world.getTile( to ).isFog( _color ) ) ) {
+        // The ground is not known: use the cost of an ordinary open field, so the terrain behind the fog does not influence the route
+        uint32_t penalty = 100;
+
+        if ( Direction::isDiagonal( direction ) ) {
+            penalty = penalty * 3 / 2;
+        }
+
+        return penalty;
+    }
+
+    return WorldPathfinder::getMovementPenalty( from, to, direction );
+}
+
 void PlayerWorldPathfinder::processCurrentNode( std::vector<int> & nodesToExplore, const int currentNodeIdx )
 {
     const bool isFirstNode = ( currentNodeIdx == _pathStart );
     const WorldNode & currentNode = _cache[currentNodeIdx];
     const bool fromWater = world.getTile( _pathStart ).isWater();
 
-    if ( !isFirstNode && !isTileAvailableForWalkThrough( currentNodeIdx, fromWater ) ) {
-        return;
+    // Unexplored ground is assumed to be free of objects and monsters
+    const bool isTileUnknown = _isFogAssumedFree && !isFirstNode && world.getTile( currentNodeIdx ).isFog( _color );
+
+    if ( !isFirstNode && !isTileUnknown ) {
+        const bool isIgnoredMonsterTile = _areMonstersIgnored && world.getTile( currentNodeIdx ).getMainObjectType() == MP2::OBJ_MONSTER;
+
+        if ( !isIgnoredMonsterTile && !isTileAvailableForWalkThrough( currentNodeIdx, fromWater ) ) {
+            return;
+        }
     }
 
-    MapsIndexes monsters = Maps::getMonstersProtectingTile( currentNodeIdx );
+    MapsIndexes monsters;
+    if ( !isTileUnknown && !_areMonstersIgnored ) {
+        monsters = Maps::getMonstersProtectingTile( currentNodeIdx );
+
+        // The player does not know about monsters standing in the fog
+        if ( _isFogAssumedFree ) {
+            monsters.erase( std::remove_if( monsters.begin(), monsters.end(), [this]( const int32_t index ) { return world.getTile( index ).isFog( _color ); } ), monsters.end() );
+        }
+    }
 
     // Monsters that the hero is going to defeat earlier on his route no longer guard anything
     if ( !_clearedMonsters.empty() ) {
@@ -606,7 +673,6 @@ void PlayerWorldPathfinder::processCurrentNode( std::vector<int> & nodesToExplor
         checkAdjacentNodes( nodesToExplore, currentNodeIdx );
     }
 }
-
 uint32_t PlayerWorldPathfinder::getMaxMovePoints( const bool /* onWater */ ) const
 {
     return _maxMovePoints;

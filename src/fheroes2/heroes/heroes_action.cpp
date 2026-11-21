@@ -607,9 +607,7 @@ namespace
     {
         Heroes * otherHero = world.getTile( dstIndex ).getHero();
         if ( otherHero == nullptr ) {
-            // This should never happen
-            assert( 0 );
-
+            // With simultaneous turns the other hero may have left or been defeated by the time this hero arrives
             DEBUG_LOG( DBG_GAME, DBG_WARN, hero.GetName() << " is trying to meet the hero on tile " << dstIndex << ", but there is no hero on this tile" )
             return;
         }
