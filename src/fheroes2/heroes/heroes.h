@@ -531,6 +531,25 @@ public:
     // Simultaneous turns: removes the last stop of the plotted route. Removes the whole route if only one stop is left.
     void removeLastWaypoint();
 
+    // Simultaneous turns: forgets all stops (used when the player resets the route).
+    void clearWaypoints()
+    {
+        _waypoints.clear();
+        _isExploringFog = false;
+    }
+
+    // Simultaneous turns: true while the last stop is in unexplored territory and the route only leads towards it as far as the explored map allows.
+    bool isExploringFog() const
+    {
+        return _isExploringFog;
+    }
+
+    // Simultaneous turns: plans the route again from the hero's current tile (the steps taken so far may have uncovered the map).
+    void replanWaypointPath()
+    {
+        rebuildWaypointPath();
+    }
+
     int GetDirection() const
     {
         return _direction;
@@ -794,6 +813,7 @@ private:
 
     // The stops of a route with several stops, in the order they will be visited (the last one is the final destination). Empty for a simple route.
     std::vector<int32_t> _waypoints;
+    bool _isExploringFog{ false };
 
     void rebuildWaypointPath();
 

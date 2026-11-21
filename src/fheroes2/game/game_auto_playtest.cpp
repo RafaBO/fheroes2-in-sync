@@ -757,8 +757,12 @@ namespace fheroes2
         }
 
         conf.setSimultaneousTurns( isSimultaneous );
+        conf.setCarryMovement( options["carry"] == "1" );
         conf.setCurrentMapInfo( mapInfo );
-        conf.SetGameDifficulty( Difficulty::NORMAL );
+
+        // The difficulty: 0 easy, 1 normal (default), 2 hard, 3 expert, 4 impossible
+        const int difficulty = options["diff"].empty() ? Difficulty::NORMAL : std::clamp( std::atoi( options["diff"].c_str() ), 0, 4 );
+        conf.SetGameDifficulty( difficulty );
         conf.SetAIMoveSpeed( 0 );
         Game::UpdateGameSpeed();
 

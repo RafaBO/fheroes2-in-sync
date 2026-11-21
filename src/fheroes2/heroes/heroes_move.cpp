@@ -254,7 +254,11 @@ bool Heroes::_moveStep( const bool jumpToNextTile )
 
         // Simultaneous turns: a stop that was planned as an object visited from the neighbouring tile may be an empty tile by now (the object was taken
         // or a rival hero moved away). The hero then stands on the stop and the steps planned after it no longer start at his tile.
-        if ( !_path.empty() && _path.GetFrontFrom() != GetIndex() ) {
+        if ( _isExploringFog && !_waypoints.empty() ) {
+            // Simultaneous turns: the last stop is in unexplored territory. Every step may uncover more of the map, so the route is planned again.
+            rebuildWaypointPath();
+        }
+        else if ( !_path.empty() && _path.GetFrontFrom() != GetIndex() ) {
             if ( !_waypoints.empty() ) {
                 rebuildWaypointPath();
             }

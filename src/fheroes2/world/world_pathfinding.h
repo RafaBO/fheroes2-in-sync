@@ -141,7 +141,14 @@ public:
 
     // Same as buildPath(), but the path starts at 'startIndex' instead of the hero's own tile and the hero is assumed to have all its movement points.
     // Used to plot routes with several stops.
-    std::list<Route::Step> buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex );
+    // 'clearedMonsters' are monsters the hero is going to defeat earlier on the route: the tiles they guard are free for this calculation. If
+    // 'towardsIfUnreachable' is set and the target cannot be reached (it lies in the fog), the path leads to the reachable tile nearest to it.
+    std::list<Route::Step> buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex, const std::vector<int32_t> & clearedMonsters,
+                                          const bool towardsIfUnreachable );
+
+    // Builds a path to the reachable tile nearest to 'targetIndex' (a plain tile without an object), but only if it is nearer than the start. Returns an empty
+    // path if there is none.
+    std::list<Route::Step> buildPathTowards( const int targetIndex ) const;
 
 private:
     // Follows regular passability rules (for the human player)
@@ -156,6 +163,9 @@ private:
     // of them may change even if the position of the hero does not change, so it should be possible to compare the
     // old values with the new ones to determine whether the pathfinder cache needs to be recalculated.
     uint32_t _maxMovePoints{ 0 };
+
+    // Monsters whose guard zones are ignored (only set while a path with several stops is built).
+    std::vector<int32_t> _clearedMonsters;
 };
 
 class AIWorldPathfinder final : public WorldPathfinder

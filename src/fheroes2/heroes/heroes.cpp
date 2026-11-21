@@ -1163,7 +1163,15 @@ bool Heroes::Recruit( const Castle & castle )
 
 void Heroes::ActionNewDay()
 {
-    _movePoints = GetMaxMovePoints();
+    const uint32_t maxMovePoints = GetMaxMovePoints();
+
+    // Simultaneous turns with the carry option: what the hero did not use today (because his route was blocked or the map was not explored) is added
+    // to tomorrow's movement, but never more than one extra day's worth.
+    const Settings & conf = Settings::Get();
+    const uint32_t carriedMovePoints
+        = ( conf.isSimultaneousTurnsEnabled() && conf.isCarryMovementEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) ) ? std::min( _movePoints, maxMovePoints ) : 0;
+
+    _movePoints = maxMovePoints + carriedMovePoints;
 
     if ( world.CountDay() > 1 ) {
         _replenishSpellPoints();
@@ -1222,6 +1230,8 @@ void Heroes::_replenishSpellPoints()
 
 void Heroes::rebuildWaypointPath()
 {
+    _isExploringFog = false;
+
     // Forget the stops the hero has already reached
     while ( !_waypoints.empty() && _waypoints.front() == GetIndex() ) {
         _waypoints.erase( _waypoints.begin() );
@@ -1232,7 +1242,25 @@ void Heroes::rebuildWaypointPath()
         return;
     }
 
+    const PlayerColor color = GetColor();
+
+    // A tile in the fog is a stop the player chose without knowing the ground. The route leads as far towards it as the explored map allows.
+    const auto isInFog = [color]( const int32_t index ) { return world.getTile( index ).isFog( color ); };
+
     std::list<Route::Step> fullPath = world.getPath( *this, _waypoints.front() );
+    if ( fullPath.empty() && isInFog( _waypoints.front() ) ) {
+        fullPath = world.getPathTowards( *this, _waypoints.front() );
+
+        _isExploringFog = true;
+
+        if ( fullPath.empty() ) {
+            // Nothing is nearer to the stop than the hero is. He waits; the stop stays and is tried again when the map is uncovered.
+            _path.Reset();
+            _waypoints.resize( 1 );
+            return;
+        }
+    }
+
     if ( fullPath.empty() ) {
         _waypoints.clear();
         _path.Reset();
@@ -1241,12 +1269,20 @@ void Heroes::rebuildWaypointPath()
 
     // Some objects (pickups, monsters, other heroes) are visited from the neighbouring tile and the hero stays there. After such a stop
     // the next part of the route starts from that neighbouring tile. Boats and castles move the hero somewhere else, so they end the route.
-    const auto staysInFront = []( const int32_t index ) {
+    const auto staysInFront = [&isInFog]( const int32_t index ) {
+        if ( isInFog( index ) ) {
+            return false;
+        }
+
         const MP2::MapObjectType type = world.getTile( index ).getMainObjectType();
 
         return MP2::isNeedStayFront( type ) && type != MP2::OBJ_BOAT;
     };
-    const auto endsRoute = []( const int32_t index ) {
+    const auto endsRoute = [&isInFog]( const int32_t index ) {
+        if ( isInFog( index ) ) {
+            return false;
+        }
+
         const MP2::MapObjectType type = world.getTile( index ).getMainObjectType();
 
         return type == MP2::OBJ_BOAT || type == MP2::OBJ_CASTLE;
@@ -1254,28 +1290,48 @@ void Heroes::rebuildWaypointPath()
 
     size_t reachableStops = 1;
 
-    for ( size_t i = 1; i < _waypoints.size(); ++i ) {
+    // Monsters the hero is going to fight on the way. When he wins, the tiles they guard are free for the rest of the route.
+    std::vector<int32_t> clearedMonsters;
+
+    for ( size_t i = 1; i < _waypoints.size() && !_isExploringFog; ++i ) {
         if ( endsRoute( _waypoints[i - 1] ) ) {
             break;
         }
 
+        if ( !isInFog( _waypoints[i - 1] ) && world.getTile( _waypoints[i - 1] ).getMainObjectType() == MP2::OBJ_MONSTER ) {
+            clearedMonsters.push_back( _waypoints[i - 1] );
+        }
+
         const int32_t start = staysInFront( _waypoints[i - 1] ) ? fullPath.back().GetFrom() : _waypoints[i - 1];
 
-        std::list<Route::Step> leg = world.getPathFrom( *this, start, _waypoints[i] );
+        std::list<Route::Step> leg = world.getPathFrom( *this, start, _waypoints[i], clearedMonsters, isInFog( _waypoints[i] ) );
         if ( leg.empty() ) {
             break;
         }
 
         fullPath.splice( fullPath.end(), leg );
         ++reachableStops;
+
+        // The route ends in the fog: the later part cannot be planned before the map is uncovered.
+        if ( isInFog( _waypoints[i] ) ) {
+            _isExploringFog = true;
+        }
+    }
+
+    // The first stop itself may be in the fog and reachable only partly
+    if ( !_isExploringFog && isInFog( _waypoints.front() ) ) {
+        _isExploringFog = true;
     }
 
     _waypoints.resize( reachableStops );
     _path.setPath( fullPath );
 
     if ( !_path.isValidForMovement() ) {
-        _waypoints.clear();
         _path.Reset();
+
+        if ( !_isExploringFog ) {
+            _waypoints.clear();
+        }
     }
 }
 
@@ -1288,19 +1344,38 @@ void Heroes::removeLastWaypoint()
         return;
     }
 
-    _waypoints.clear();
+    clearWaypoints();
     _path.Reset();
 }
 
 void Heroes::addWaypoint( const int32_t dstIdx )
 {
+    // A last stop in unexplored territory cannot be followed by other stops. A new click replaces it.
+    if ( _isExploringFog ) {
+        if ( !_waypoints.empty() ) {
+            _waypoints.pop_back();
+        }
+
+        _isExploringFog = false;
+
+        if ( _waypoints.empty() ) {
+            _path.Reset();
+        }
+        else {
+            rebuildWaypointPath();
+        }
+    }
+
+    // Stops left over from a route that something else has cancelled (a battle, a boat) are forgotten
+    if ( !_path.isValidForMovement() ) {
+        clearWaypoints();
+    }
+
     if ( _waypoints.empty() ) {
         if ( !_path.isValidForMovement() ) {
-            calculatePath( dstIdx );
+            _waypoints.push_back( dstIdx );
 
-            if ( _path.isValidForMovement() ) {
-                _waypoints.push_back( dstIdx );
-            }
+            rebuildWaypointPath();
 
             return;
         }
@@ -1321,7 +1396,12 @@ void Heroes::calculatePath( int32_t dstIdx )
 {
     if ( dstIdx < 0 ) {
         if ( !_waypoints.empty() ) {
-            // Recalculating an existing route with several stops
+            // Recalculating an existing route with several stops. If something has cancelled the route in the meantime, the stops are forgotten.
+            if ( _path.empty() && !_isExploringFog ) {
+                clearWaypoints();
+                return;
+            }
+
             rebuildWaypointPath();
             return;
         }
@@ -1331,7 +1411,7 @@ void Heroes::calculatePath( int32_t dstIdx )
     }
     else {
         // A new simple route replaces any route with several stops
-        _waypoints.clear();
+        clearWaypoints();
     }
 
     if ( !_path.isValidForMovement() ) {

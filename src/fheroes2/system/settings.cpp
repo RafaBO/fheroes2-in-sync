@@ -64,6 +64,7 @@ namespace
         GAME_SHOW_BUTTONS = 0x00000200,
         GAME_SHOW_STATUS = 0x00000400,
         GAME_SIMULTANEOUS_TURNS = 0x00000800,
+        GAME_CARRY_MOVEMENT = 0x00001000,
         GAME_FULLSCREEN = 0x00008000,
         GAME_3D_AUDIO = 0x00010000,
         GAME_SYSTEM_INFO = 0x00020000,
@@ -241,6 +242,10 @@ bool Settings::Read( const std::string & filePath )
 
     if ( config.Exists( "simultaneous turns" ) ) {
         setSimultaneousTurns( config.StrParams( "simultaneous turns" ) == "on" );
+    }
+
+    if ( config.Exists( "carry movement" ) ) {
+        setCarryMovement( config.StrParams( "carry movement" ) == "on" );
     }
 
     if ( config.Exists( "auto spell casting" ) ) {
@@ -490,6 +495,9 @@ std::string Settings::getOptionsString() const
 
     os << std::endl << "# Enable simultaneous turns (experimental): on/off" << std::endl;
     os << "simultaneous turns = " << ( _gameOptions.Modes( GAME_SIMULTANEOUS_TURNS ) ? "on" : "off" ) << std::endl;
+
+    os << std::endl << "# With simultaneous turns, movement points not used in a turn carry over to the next turn (at most one day's worth): on/off" << std::endl;
+    os << "carry movement = " << ( _gameOptions.Modes( GAME_CARRY_MOVEMENT ) ? "on" : "off" ) << std::endl;
 
     os << std::endl << "# Enable auto combat spell casting: on/off" << std::endl;
     os << "auto spell casting = " << ( _gameOptions.Modes( GAME_BATTLE_AUTO_SPELLCAST ) ? "on" : "off" ) << std::endl;
@@ -803,6 +811,21 @@ void Settings::setSimultaneousTurns( bool enable )
 bool Settings::isSimultaneousTurnsEnabled() const
 {
     return _gameOptions.Modes( GAME_SIMULTANEOUS_TURNS );
+}
+
+void Settings::setCarryMovement( bool enable )
+{
+    if ( enable ) {
+        _gameOptions.SetModes( GAME_CARRY_MOVEMENT );
+    }
+    else {
+        _gameOptions.ResetModes( GAME_CARRY_MOVEMENT );
+    }
+}
+
+bool Settings::isCarryMovementEnabled() const
+{
+    return _gameOptions.Modes( GAME_CARRY_MOVEMENT );
 }
 
 void Settings::setBattleAutoSpellcast( bool enable )

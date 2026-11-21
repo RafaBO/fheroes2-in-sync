@@ -209,6 +209,8 @@ public:
 
     // Experimental: all heroes (human and AI) move together after the human players end their turns.
     bool isSimultaneousTurnsEnabled() const;
+    // With simultaneous turns: movement points not used in a turn are added to the next turn (at most one day's worth).
+    bool isCarryMovementEnabled() const;
     bool BattleAutoSpellcast() const;
     bool isPriceOfLoyaltySupported() const;
     bool isMonochromeCursorEnabled() const;
@@ -302,6 +304,7 @@ public:
     void SetBattleSpeed( int );
     void setBattleAutoResolve( bool enable );
     void setSimultaneousTurns( bool enable );
+    void setCarryMovement( bool enable );
     void setBattleAutoSpellcast( bool enable );
     void setFullScreen( const bool enable );
     void setMonochromeCursor( const bool enable );

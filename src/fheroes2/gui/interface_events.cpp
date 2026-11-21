@@ -253,6 +253,7 @@ void Interface::AdventureMap::EventResetHeroPath()
     }
 
     hero->GetPath().Reset();
+    hero->clearWaypoints();
 
     setRedraw( REDRAW_GAMEAREA | REDRAW_BUTTONS );
 }

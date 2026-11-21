@@ -30,6 +30,7 @@
 #include "image.h"
 #include "localevent.h"
 #include "math_base.h"
+#include "pal.h"
 #include "screen.h"
 #include "settings.h"
 #include "translations.h"
@@ -61,8 +62,25 @@ namespace
     const fheroes2::Rect scrollSpeedRoi{ fheroes2::twoOptionsOffsetX + offsetBetweenOptions.width, optionOffset.y + offsetBetweenOptions.height, fheroes2::optionIconSize,
                                          fheroes2::optionIconSize };
 
-    const fheroes2::Rect simultaneousTurnsRoi{ fheroes2::twoOptionsOffsetX + ( fheroes2::threeOptionsStepX / 2 ), optionOffset.y + offsetBetweenOptions.height * 2,
-                                               fheroes2::optionIconSize, fheroes2::optionIconSize };
+    const fheroes2::Rect simultaneousTurnsRoi{ fheroes2::twoOptionsOffsetX, optionOffset.y + offsetBetweenOptions.height * 2, fheroes2::optionIconSize,
+                                               fheroes2::optionIconSize };
+    const fheroes2::Rect carryMovementRoi{ fheroes2::twoOptionsOffsetX + offsetBetweenOptions.width, optionOffset.y + offsetBetweenOptions.height * 2,
+                                           fheroes2::optionIconSize, fheroes2::optionIconSize };
+
+    void drawCarryMovementOption( const fheroes2::Rect & optionRoi )
+    {
+        const Settings & conf = Settings::Get();
+        const bool isEnabled = conf.isCarryMovementEnabled();
+
+        // The option only matters together with simultaneous turns, so it looks switched off without them.
+        fheroes2::drawOption( optionRoi, Assets::getImage( ICN::SPANEL, isEnabled ? 16 : 18 ), _( "Carry Movement" ), isEnabled ? _( "On" ) : _( "Off" ),
+                              fheroes2::UiOptionTextWidth::TWO_ELEMENTS_ROW );
+
+        if ( !conf.isSimultaneousTurnsEnabled() ) {
+            fheroes2::ApplyPalette( fheroes2::Display::instance(), optionRoi.x, optionRoi.y, fheroes2::Display::instance(), optionRoi.x, optionRoi.y, optionRoi.width, optionRoi.height,
+                                    PAL::GetPalette( PAL::PaletteType::DARKENING ) );
+        }
+    }
 
     void drawSimultaneousTurnsOption( const fheroes2::Rect & optionRoi )
     {
@@ -115,18 +133,20 @@ namespace
         const fheroes2::Rect windowScrollSpeedRoi( scrollSpeedRoi + windowRoi.getPosition() );
         const fheroes2::Rect windowArmyEstimationModeRoi( armyEstimationModeRoi + windowRoi.getPosition() );
         const fheroes2::Rect windowSimultaneousTurnsRoi( simultaneousTurnsRoi + windowRoi.getPosition() );
+        const fheroes2::Rect windowCarryMovementRoi( carryMovementRoi + windowRoi.getPosition() );
 
         Settings & conf = Settings::Get();
 
         const auto drawOptions
             = [&conf, &windowInterfaceTypeRoi, &windowInterfacePresenceRoi, &windowCursorTypeRoi, &windowScrollSpeedRoi, &windowArmyEstimationModeRoi,
-               &windowSimultaneousTurnsRoi]() {
+               &windowSimultaneousTurnsRoi, &windowCarryMovementRoi]() {
                   drawInterfaceType( windowInterfaceTypeRoi, conf.getInterfaceType(), fheroes2::UiOptionTextWidth::TWO_ELEMENTS_ROW );
                   drawInterfacePresence( windowInterfacePresenceRoi );
                   drawCursorType( windowCursorTypeRoi, conf.isMonochromeCursorEnabled(), fheroes2::UiOptionTextWidth::TWO_ELEMENTS_ROW );
                   drawScrollSpeed( windowScrollSpeedRoi, conf.ScrollSpeed() );
                   drawArmyNumberEstimationOption( windowArmyEstimationModeRoi );
                   drawSimultaneousTurnsOption( windowSimultaneousTurnsRoi );
+                  drawCarryMovementOption( windowCarryMovementRoi );
               };
 
         drawOptions();
@@ -176,6 +196,14 @@ namespace
                 continue;
             }
 
+            if ( le.MouseClickLeft( windowCarryMovementRoi ) ) {
+                saveConfiguration = true;
+                conf.setCarryMovement( !conf.isCarryMovementEnabled() );
+                refreshWindow();
+
+                continue;
+            }
+
             if ( le.MouseClickLeft( windowScrollSpeedRoi ) ) {
                 saveConfiguration = true;
                 conf.SetScrollSpeed( ( conf.ScrollSpeed() + 1 ) % ( SCROLL_SPEED_VERY_FAST + 1 ) );
@@ -219,6 +247,11 @@ namespace
             else if ( le.isMouseRightButtonPressedInArea( windowSimultaneousTurnsRoi ) ) {
                 fheroes2::showStandardTextMessage( _( "Simultaneous Turns" ),
                                                    _( "Experimental. When on, you plot your heroes' routes and end the turn; then all heroes, including the computer's, move together." ), 0 );
+            }
+            else if ( le.isMouseRightButtonPressedInArea( windowCarryMovementRoi ) ) {
+                fheroes2::showStandardTextMessage( _( "Carry Movement" ),
+                                                   _( "Only with simultaneous turns. Movement points a hero did not use in a turn (because his route was blocked or the map was not explored) are added to the next turn, at most one day's worth." ),
+                                                   0 );
             }
             else if ( le.isMouseRightButtonPressedInArea( buttonOk.area() ) ) {
                 fheroes2::showStandardTextMessage( _( "Okay" ), _( "Exit this menu." ), 0 );

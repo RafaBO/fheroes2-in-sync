@@ -1168,9 +1168,15 @@ std::list<Route::Step> World::getPath( const Heroes & hero, int targetIndex )
     return _pathfinder.buildPath( targetIndex );
 }
 
-std::list<Route::Step> World::getPathFrom( const Heroes & hero, int startIndex, int targetIndex )
+std::list<Route::Step> World::getPathFrom( const Heroes & hero, int startIndex, int targetIndex, const std::vector<int32_t> & clearedMonsters, bool towardsIfUnreachable )
 {
-    return _pathfinder.buildPathFrom( hero, startIndex, targetIndex );
+    return _pathfinder.buildPathFrom( hero, startIndex, targetIndex, clearedMonsters, towardsIfUnreachable );
+}
+
+std::list<Route::Step> World::getPathTowards( const Heroes & hero, int targetIndex )
+{
+    _pathfinder.reEvaluateIfNeeded( hero );
+    return _pathfinder.buildPathTowards( targetIndex );
 }
 
 void World::resetPathfinder()

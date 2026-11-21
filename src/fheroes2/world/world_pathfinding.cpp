@@ -497,7 +497,8 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPath( const int targetIndex )
     return path;
 }
 
-std::list<Route::Step> PlayerWorldPathfinder::buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex )
+std::list<Route::Step> PlayerWorldPathfinder::buildPathFrom( const Heroes & hero, const int startIndex, const int targetIndex, const std::vector<int32_t> & clearedMonsters,
+                                                             const bool towardsIfUnreachable )
 {
     if ( !Maps::isValidAbsIndex( startIndex ) || !Maps::isValidAbsIndex( targetIndex ) ) {
         return {};
@@ -507,13 +508,58 @@ std::list<Route::Step> PlayerWorldPathfinder::buildPathFrom( const Heroes & hero
     const auto newSettings = std::make_tuple( startIndex, hero.GetColor(), hero.GetMaxMovePoints(),
                                               static_cast<uint8_t>( hero.GetLevelSkill( Skill::Secondary::PATHFINDING ) ), hero.GetMaxMovePoints() );
 
-    if ( currentSettings != newSettings ) {
+    // The guard zones of the monsters to be defeated change the result, so such a calculation is never reused.
+    _clearedMonsters = clearedMonsters;
+
+    if ( currentSettings != newSettings || !_clearedMonsters.empty() ) {
         currentSettings = newSettings;
 
         processWorldMap();
     }
 
-    return buildPath( targetIndex );
+    std::list<Route::Step> path = buildPath( targetIndex );
+    if ( path.empty() && towardsIfUnreachable ) {
+        path = buildPathTowards( targetIndex );
+    }
+
+    if ( !_clearedMonsters.empty() ) {
+        // Do not let the next call reuse this result.
+        _clearedMonsters.clear();
+        _pathStart = -1;
+    }
+
+    return path;
+}
+
+std::list<Route::Step> PlayerWorldPathfinder::buildPathTowards( const int targetIndex ) const
+{
+    assert( _cache.size() == world.getSize() && Maps::isValidAbsIndex( _pathStart ) && Maps::isValidAbsIndex( targetIndex ) );
+
+    const bool fromWater = world.getTile( _pathStart ).isWater();
+
+    int bestIndex = -1;
+    uint32_t bestDistance = Maps::GetApproximateDistance( _pathStart, targetIndex );
+    uint32_t bestCost = 0;
+
+    for ( size_t i = 0; i < _cache.size(); ++i ) {
+        const int index = static_cast<int>( i );
+        if ( index == _pathStart || _cache[i]._cost == 0 || !isTileAvailableForWalkThrough( index, fromWater ) ) {
+            continue;
+        }
+
+        const uint32_t distance = Maps::GetApproximateDistance( index, targetIndex );
+        if ( distance < bestDistance || ( bestIndex != -1 && distance == bestDistance && _cache[i]._cost < bestCost ) ) {
+            bestIndex = index;
+            bestDistance = distance;
+            bestCost = _cache[i]._cost;
+        }
+    }
+
+    if ( bestIndex == -1 ) {
+        return {};
+    }
+
+    return buildPath( bestIndex );
 }
 
 void PlayerWorldPathfinder::processCurrentNode( std::vector<int> & nodesToExplore, const int currentNodeIdx )
@@ -526,7 +572,14 @@ void PlayerWorldPathfinder::processCurrentNode( std::vector<int> & nodesToExplor
         return;
     }
 
-    const MapsIndexes & monsters = Maps::getMonstersProtectingTile( currentNodeIdx );
+    MapsIndexes monsters = Maps::getMonstersProtectingTile( currentNodeIdx );
+
+    // Monsters that the hero is going to defeat earlier on his route no longer guard anything
+    if ( !_clearedMonsters.empty() ) {
+        monsters.erase( std::remove_if( monsters.begin(), monsters.end(),
+                                        [this]( const int32_t index ) { return std::find( _clearedMonsters.begin(), _clearedMonsters.end(), index ) != _clearedMonsters.end(); } ),
+                        monsters.end() );
+    }
 
     // If the current tile is protected by monsters, and this tile is not the starting tile, then the hero can only move towards one of the neighboring monsters
     if ( !isFirstNode && !monsters.empty() ) {

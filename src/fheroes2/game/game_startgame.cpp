@@ -44,6 +44,7 @@
 #include "color.h"
 #include "cursor.h"
 #include "dialog.h"
+#include "difficulty.h"
 #include "direction.h"
 #include "game_assets.h"
 #include "game_auto_playtest.h"
@@ -711,6 +712,13 @@ int Interface::AdventureMap::GetCursorTileIndex( int32_t dstIndex )
     const Maps::Tile & tile = world.getTile( dstIndex );
 
     if ( tile.isFog( Settings::Get().CurrentColor() ) ) {
+        // Simultaneous turns: a stop in unexplored territory is allowed. The hero walks as far towards it as the explored map allows and goes on
+        // when his steps uncover more of it.
+        const Settings & conf = Settings::Get();
+        if ( GetFocusType() == GameFocus::HEROES && conf.isSimultaneousTurnsEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) && !GetFocusHeroes()->isShipMaster() ) {
+            return Cursor::CURSOR_HERO_MOVE;
+        }
+
         return Cursor::POINTER;
     }
 
@@ -1015,16 +1023,27 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
         if ( isSimultaneousTurns && res == fheroes2::GameMode::END_TURN && !skipTurns ) {
             // All players have planned. Walk all heroes together; computer heroes that still have movement left plan again and continue.
-            // Four rounds are enough for most heroes; fewer than that makes the computer players clearly weaker (measured), more brings nothing.
-            constexpr int maxRounds = 8;
+            // How often the computer players may plan again during the walk depends on the difficulty (owner's decision): never on Easy and
+            // Normal, once on Hard and Expert, twice on Impossible. Measured: planning again is what keeps them as strong as with normal turns.
+            const int replanRounds = [difficulty = Game::getDifficulty()]() {
+                switch ( difficulty ) {
+                case Difficulty::HARD:
+                case Difficulty::EXPERT:
+                    return 1;
+                case Difficulty::IMPOSSIBLE:
+                    return 2;
+                default:
+                    return 0;
+                }
+            }();
 
-            for ( int round = 0; round < maxRounds && res == fheroes2::GameMode::END_TURN; ++round ) {
+            for ( int round = 0; round <= replanRounds && res == fheroes2::GameMode::END_TURN; ++round ) {
                 if ( simultaneousHumanColor != PlayerColor::NONE ) {
                     conf.SetCurrentColor( simultaneousHumanColor );
                 }
 
                 res = runSimultaneousResolution( simultaneousHeroes );
-                if ( res != fheroes2::GameMode::END_TURN ) {
+                if ( res != fheroes2::GameMode::END_TURN || round == replanRounds ) {
                     break;
                 }
 
