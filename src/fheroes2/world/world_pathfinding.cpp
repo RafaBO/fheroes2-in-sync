@@ -634,11 +634,6 @@ void PlayerWorldPathfinder::processCurrentNode( std::vector<int> & nodesToExplor
     MapsIndexes monsters;
     if ( !isTileUnknown && !_areMonstersIgnored ) {
         monsters = Maps::getMonstersProtectingTile( currentNodeIdx );
-
-        // The player does not know about monsters standing in the fog
-        if ( _isFogAssumedFree ) {
-            monsters.erase( std::remove_if( monsters.begin(), monsters.end(), [this]( const int32_t index ) { return world.getTile( index ).isFog( _color ); } ), monsters.end() );
-        }
     }
 
     // Monsters that the hero is going to defeat earlier on his route no longer guard anything

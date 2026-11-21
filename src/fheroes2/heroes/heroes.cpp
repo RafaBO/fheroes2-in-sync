@@ -1262,7 +1262,7 @@ void Heroes::rebuildWaypointPath( const bool isDuringWalk /* = false */ )
         }
 
         for ( const int32_t monster : Maps::getMonstersProtectingTile( index ) ) {
-            if ( !isInFog( monster ) && !isCleared( monster ) ) {
+            if ( !isCleared( monster ) ) {
                 return true;
             }
         }
@@ -1444,8 +1444,81 @@ void Heroes::storeMovePointsForNextDay()
     }
 }
 
+namespace
+{
+    // The tile where the hero stands when the plotted route is over (in front of the object, if the last step visits one from the neighbouring tile)
+    int32_t getRouteEndTile( const Heroes & hero )
+    {
+        const Route::Path & path = hero.GetPath();
+
+        if ( path.empty() ) {
+            return hero.GetIndex();
+        }
+
+        const int32_t last = path.back().GetIndex();
+
+        return MP2::isNeedStayFront( world.getTile( last ).getMainObjectType() ) ? path.back().GetFrom() : last;
+    }
+}
+
+void Heroes::addHold()
+{
+    _holdTiles.push_back( getRouteEndTile( *this ) );
+}
+
+bool Heroes::consumeHoldHere()
+{
+    const auto it = std::find( _holdTiles.begin(), _holdTiles.end(), GetIndex() );
+
+    if ( it == _holdTiles.end() ) {
+        return false;
+    }
+
+    _holdTiles.erase( it );
+    return true;
+}
+
+std::vector<uint32_t> Heroes::getRouteStepNumbers() const
+{
+    std::vector<uint32_t> numbers;
+    numbers.reserve( _path.size() );
+
+    std::vector<int32_t> holds = _holdTiles;
+
+    uint32_t round = 0;
+    uint32_t credit = 0;
+
+    for ( const Route::Step & step : _path ) {
+        // Waits at the tile the step starts from
+        for ( auto it = std::find( holds.begin(), holds.end(), step.GetFrom() ); it != holds.end(); it = std::find( holds.begin(), holds.end(), step.GetFrom() ) ) {
+            holds.erase( it );
+            ++round;
+            credit = 0;
+        }
+
+        do {
+            ++round;
+        } while ( !Route::advanceStepClock( credit, step.GetPenalty() ) );
+
+        numbers.push_back( round );
+    }
+
+    return numbers;
+}
+
 void Heroes::removeLastWaypoint()
 {
+    // The last click may have been a wait
+    {
+        const int32_t end = getRouteEndTile( *this );
+        const auto it = std::find( _holdTiles.rbegin(), _holdTiles.rend(), end );
+
+        if ( it != _holdTiles.rend() ) {
+            _holdTiles.erase( std::next( it ).base() );
+            return;
+        }
+    }
+
     if ( _waypoints.size() > 1 ) {
         _waypoints.pop_back();
 

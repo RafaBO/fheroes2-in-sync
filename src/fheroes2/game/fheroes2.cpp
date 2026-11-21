@@ -53,7 +53,34 @@
 #include "game_invalid_assets.h"
 #include "logging.h"
 
+#if defined( __EMSCRIPTEN__ )
+#include <emscripten.h>
+#endif
+
+static int runApplication( int argc, char ** argv );
+
 int main( int argc, char ** argv )
+{
+    const int result = runApplication( argc, argv );
+
+#if defined( __EMSCRIPTEN__ )
+    // The page cannot continue after the game has quit (black, unresponsive canvas): save files and return to the launcher.
+    EM_ASM( {
+        var reload = function() { location.reload(); };
+        try {
+            FS.syncfs( false, reload );
+            setTimeout( reload, 1500 );
+        }
+        catch ( e ) {
+            reload();
+        }
+    } );
+#endif
+
+    return result;
+}
+
+static int runApplication( int argc, char ** argv )
 {
 // SDL2main.lib converts argv to UTF-8, but this application expects ANSI, use the original argv
 #if defined( _WIN32 )

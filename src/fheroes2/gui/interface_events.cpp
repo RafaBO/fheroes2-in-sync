@@ -221,7 +221,7 @@ void Interface::AdventureMap::EventNextHero()
 fheroes2::GameMode Interface::AdventureMap::EventHeroMovement()
 {
     if ( Heroes * hero = GetFocusHeroes(); hero ) {
-        if ( isSimultaneousPlanning() && hero->GetPath().isValidForMovement() ) {
+        if ( isSimultaneousPlanning() && ( hero->GetPath().isValidForMovement() || hero->hasHolds() ) ) {
             // Simultaneous turns: this button undoes the last stop of the route
             hero->removeLastWaypoint();
 
@@ -254,8 +254,32 @@ void Interface::AdventureMap::EventResetHeroPath()
 
     hero->GetPath().Reset();
     hero->clearWaypoints();
+    hero->clearHolds();
 
     setRedraw( REDRAW_GAMEAREA | REDRAW_BUTTONS );
+}
+
+void Interface::AdventureMap::EventHoldHero()
+{
+    Heroes * hero = GetFocusHeroes();
+    if ( hero == nullptr ) {
+        return;
+    }
+
+    // The hero waits one step at the end of the plotted route
+    hero->addHold();
+
+    setRedraw( REDRAW_GAMEAREA | REDRAW_BUTTONS );
+}
+
+fheroes2::GameMode Interface::AdventureMap::EventComputerDialog() const
+{
+    const fheroes2::GameMode res = Dialog::ComputerOptions();
+
+    // The Simultaneous Turns option changes the buttons.
+    Interface::AdventureMap::Get().setRedraw( REDRAW_BUTTONS );
+
+    return res;
 }
 
 void Interface::AdventureMap::EventKingdomInfo() const

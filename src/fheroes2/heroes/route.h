@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <list>
 #include <string>
@@ -218,4 +219,18 @@ namespace Route
     IStreamBase & operator>>( IStreamBase & stream, Path & path );
 
     uint32_t calculatePathPenalty( const std::list<Step> & path );
+
+    // Simultaneous turns: every step of the walk lasts as many rounds as it takes to pay its movement cost (100 per round, a little of the unused part is
+    // carried over). Returns true when the hero makes the step in this round.
+    inline bool advanceStepClock( uint32_t & credit, const uint32_t cost )
+    {
+        credit += 100;
+
+        if ( credit < cost ) {
+            return false;
+        }
+
+        credit = std::min( credit - cost, static_cast<uint32_t>( 99 ) );
+        return true;
+    }
 }

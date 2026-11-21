@@ -197,6 +197,64 @@ namespace
     }
 
     // Builds a button picture: the original button with its picture wiped out and the undo icon carved on it.
+    // Placeholder for the owner's hand icon: the pause sign (two bars) carved in the same way.
+    fheroes2::Sprite makeHoldButton( const fheroes2::Sprite & original, const int32_t offset, const bool isEvilInterface )
+    {
+        fheroes2::Sprite result( original );
+
+        const int32_t width = result.width();
+        const int32_t height = result.height();
+        if ( width < 12 || height < 12 ) {
+            return result;
+        }
+
+        uint8_t * image = result.image();
+        uint8_t * transform = result.singleLayer() ? nullptr : result.transform();
+
+        const int32_t minX = 4 + offset;
+        const int32_t minY = 4 + offset;
+        const int32_t maxX = std::min( width - 4 + offset, width );
+        const int32_t maxY = std::min( height - 4 + offset, height );
+
+        std::array<int32_t, 256> histogram{};
+        for ( int32_t y = minY; y < maxY; ++y ) {
+            for ( int32_t x = minX; x < maxX; ++x ) {
+                ++histogram[image[y * width + x]];
+            }
+        }
+
+        const uint8_t background = static_cast<uint8_t>( std::distance( histogram.begin(), std::max_element( histogram.begin(), histogram.end() ) ) );
+
+        for ( int32_t y = minY; y < maxY; ++y ) {
+            for ( int32_t x = minX; x < maxX; ++x ) {
+                image[y * width + x] = background;
+
+                if ( transform != nullptr ) {
+                    transform[y * width + x] = 0;
+                }
+            }
+        }
+
+        const uint8_t dark = isEvilInterface ? fheroes2::GetColorId( 0x18, 0x18, 0x18 ) : fheroes2::GetColorId( 0x58, 0x28, 0x08 );
+        const uint8_t highlight = fheroes2::GetColorId( 0xFC, 0xFC, 0xFC );
+
+        // Two bars, 6 pixels wide and 18 high, with a light edge on the left
+        for ( const int32_t barX : { 9, 20 } ) {
+            for ( int32_t y = 9; y < 27; ++y ) {
+                for ( int32_t x = barX; x < barX + 6; ++x ) {
+                    const int32_t px = x + offset;
+                    const int32_t py = y + offset;
+
+                    if ( px >= minX && px < maxX && py >= minY && py < maxY ) {
+                        image[py * width + px] = ( x == barX ) ? highlight : dark;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
     fheroes2::Sprite makeUndoButton( const fheroes2::Sprite & original, const int32_t offset, const bool isEvilInterface )
     {
         fheroes2::Sprite result( original );
@@ -280,8 +338,42 @@ void Interface::ButtonsPanel::SetPos( int32_t x, int32_t y )
 
     _setButtonStatus();
 
-    x = GetArea().x;
-    y = GetArea().y;
+    _applyLayout();
+}
+
+void Interface::ButtonsPanel::_applyLayout()
+{
+    _isSimultaneousLayout = isSimultaneousPlanning();
+
+    int32_t x = GetArea().x;
+    int32_t y = GetArea().y;
+
+    if ( _isSimultaneousLayout ) {
+        // Simultaneous turns: hero, town, undo, hold / spell, flag, computer, hourglass. The file options are part of the computer button.
+        const int32_t w = _buttonNextHero.area().width;
+        const int32_t h = _buttonNextHero.area().height;
+
+        _buttonNextHero.setPosition( x, y );
+        _buttonKingdom.setPosition( x + w, y );
+        _buttonHeroMovement.setPosition( x + w * 2, y );
+        _buttonFile.setPosition( x + w * 3, y );
+
+        _buttonSpell.setPosition( x, y + h );
+        _buttonAdventure.setPosition( x + w, y + h );
+        _buttonSystem.setPosition( x + w * 2, y + h );
+        _buttonEndTurn.setPosition( x + w * 3, y + h );
+
+        _nextHeroRect = _buttonNextHero.area();
+        _kingdomRect = _buttonKingdom.area();
+        _heroMovementRect = _buttonHeroMovement.area();
+        _fileRect = _buttonFile.area();
+        _spellRect = _buttonSpell.area();
+        _adventureRect = _buttonAdventure.area();
+        _systemRect = _buttonSystem.area();
+        _endTurnRect = _buttonEndTurn.area();
+
+        return;
+    }
 
     // Top row
     _buttonNextHero.setPosition( x, y );
@@ -324,6 +416,11 @@ void Interface::ButtonsPanel::_redraw()
         BorderWindow::Redraw();
     }
 
+    // The option may have been switched since the buttons were placed
+    if ( _isSimultaneousLayout != isSimultaneousPlanning() ) {
+        _applyLayout();
+    }
+
     _setButtonStatus();
 
     _buttonNextHero.draw();
@@ -344,6 +441,16 @@ void Interface::ButtonsPanel::_redraw()
     _buttonEndTurn.draw();
     _buttonAdventure.draw();
     _buttonFile.draw();
+
+    if ( isSimultaneousPlanning() ) {
+        // Simultaneous turns: the file button is the hold button.
+        const bool isEvilInterface = conf.isEvilInterfaceEnabled();
+        const bool isPressed = _buttonFile.isEnabled() && _buttonFile.isPressed();
+        const fheroes2::Sprite holdButton = makeHoldButton( Assets::getImage( isEvilInterface ? ICN::ADVEBTNS : ICN::ADVBTNS, isPressed ? 13 : 12 ), isPressed ? 1 : 0, isEvilInterface );
+
+        fheroes2::Blit( holdButton, fheroes2::Display::instance(), _fileRect.x, _fileRect.y );
+    }
+
     _buttonSystem.draw();
 }
 
@@ -425,10 +532,22 @@ fheroes2::GameMode Interface::ButtonsPanel::queueEventProcessing()
         res = _interface.EventAdventureDialog();
     }
     else if ( le.MouseClickLeft( _fileRect ) ) {
-        res = _interface.EventFileDialog();
+        if ( isSimultaneousPlanning() ) {
+            if ( _buttonFile.isEnabled() ) {
+                _interface.EventHoldHero();
+            }
+        }
+        else {
+            res = _interface.EventFileDialog();
+        }
     }
     else if ( le.MouseClickLeft( _systemRect ) ) {
-        _interface.EventSystemDialog();
+        if ( isSimultaneousPlanning() ) {
+            res = _interface.EventComputerDialog();
+        }
+        else {
+            _interface.EventSystemDialog();
+        }
     }
     else if ( le.isMouseRightButtonPressedInArea( _nextHeroRect ) ) {
         fheroes2::showStandardTextMessage( _( "Next Hero" ), _( "Select the next Hero." ), Dialog::ZERO );
@@ -454,6 +573,14 @@ fheroes2::GameMode Interface::ButtonsPanel::queueEventProcessing()
     else if ( le.isMouseRightButtonPressedInArea( _adventureRect ) ) {
         fheroes2::showStandardTextMessage( _( "Adventure Options" ), _( "Bring up the adventure options menu." ), Dialog::ZERO );
     }
+    else if ( le.isMouseRightButtonPressedInArea( _fileRect ) && isSimultaneousPlanning() ) {
+        fheroes2::showStandardTextMessage( _( "Hold" ),
+                                           _( "Make the hero wait one step where his plotted route ends, before he moves on. Click it several times to wait longer. Undo removes the last wait." ),
+                                           Dialog::ZERO );
+    }
+    else if ( le.isMouseRightButtonPressedInArea( _systemRect ) && isSimultaneousPlanning() ) {
+        fheroes2::showStandardTextMessage( _( "Computer" ), _( "Save, load or quit the game, or change the settings of the game." ), Dialog::ZERO );
+    }
     else if ( le.isMouseRightButtonPressedInArea( _fileRect ) ) {
         fheroes2::showStandardTextMessage( _( "File Options" ), _( "Bring up the file options menu, allowing you to load, save, start a new game or quit." ),
                                            Dialog::ZERO );
@@ -469,15 +596,28 @@ void Interface::ButtonsPanel::_setButtonStatus()
 {
     Heroes * currentHero = GetFocusHeroes();
 
+    if ( !isSimultaneousPlanning() ) {
+        // The file button is always available (in simultaneous turns it is the hold button)
+        _buttonFile.enable();
+    }
+
     if ( isSimultaneousPlanning() ) {
         // Undo button: active only while the hero has a plotted route.
         _buttonHeroMovement.setICNIndexes( 2, 3 );
 
-        if ( currentHero && currentHero->GetPath().isValidForMovement() ) {
+        if ( currentHero && ( currentHero->GetPath().isValidForMovement() || currentHero->hasHolds() ) ) {
             _buttonHeroMovement.enable();
         }
         else {
             _buttonHeroMovement.disable();
+        }
+
+        // Hold button: needs a selected hero
+        if ( currentHero ) {
+            _buttonFile.enable();
+        }
+        else {
+            _buttonFile.disable();
         }
     }
     else if ( currentHero && currentHero->GetPath().isValidForMovement() && currentHero->MayStillMove( false, true ) ) {

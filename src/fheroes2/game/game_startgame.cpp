@@ -1226,6 +1226,7 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
 
     bool isAnyHeroMoving = true;
     size_t tick = 0;
+    std::vector<uint32_t> credits( walkers.size(), 0 );
 
     while ( isAnyHeroMoving ) {
         if ( !le.HandleEvents( false, true ) ) {
@@ -1249,6 +1250,21 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
 
             if ( !hero->isMoveEnabled() ) {
                 hero->SetMove( false );
+                continue;
+            }
+
+            const size_t heroNumber = ( walkerNumber + tick ) % walkers.size();
+
+            // A wait plotted by the player: the hero stands still for this step
+            if ( hero->consumeHoldHere() ) {
+                credits[heroNumber] = 0;
+                isAnyHeroMoving = true;
+                continue;
+            }
+
+            // A step over difficult ground takes more than one round
+            if ( !Route::advanceStepClock( credits[heroNumber], hero->GetPath().GetFrontPenalty() ) ) {
+                isAnyHeroMoving = true;
                 continue;
             }
 
@@ -1318,6 +1334,13 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
             display.render();
 
             fheroes2::delayforMs( 150 );
+        }
+    }
+
+    // Waits that were not needed (the route ended first) do not carry over to the next turn
+    for ( Heroes * hero : heroes ) {
+        if ( hero != nullptr ) {
+            hero->clearHolds();
         }
     }
 

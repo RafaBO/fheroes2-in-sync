@@ -86,6 +86,8 @@ namespace Dialog
 
     int AdventureOptions( const bool enableDig );
     fheroes2::GameMode FileOptions();
+    // Simultaneous turns: the computer button leads to the file options (new, load, save, quit) and to the system options.
+    fheroes2::GameMode ComputerOptions();
     std::string SelectFileLoad();
     std::string SelectFileSave();
 

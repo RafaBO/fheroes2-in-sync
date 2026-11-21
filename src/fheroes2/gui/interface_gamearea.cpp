@@ -30,8 +30,12 @@
 #include <functional>
 #include <list>
 #include <map>
+#include <iterator>
 #include <ostream>
+#include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "castle.h"
 #include "color.h"
@@ -61,6 +65,7 @@
 #include "til.h"
 #include "ui_constants.h"
 #include "ui_object_rendering.h"
+#include "ui_text.h"
 #include "world.h"
 
 namespace
@@ -734,7 +739,13 @@ void Interface::GameArea::Redraw( fheroes2::Image & dst, int flag, bool isPuzzle
         // Not all arrows and their shadows fit in 1 tile. We need to consider an area of 1 tile bigger to properly render everything.
         const fheroes2::Rect extendedVisibleRoi{ tileROI.x - 1, tileROI.y - 1, tileROI.width + 2, tileROI.height + 2 };
 
-        for ( ; currentStep != path.end(); ++currentStep ) {
+        // Simultaneous turns: every mark of the route also shows the step at which the hero arrives there (difficult ground and waits count)
+        const bool showStepNumbers = Settings::Get().isSimultaneousTurnsEnabled() && !currentHero->isControlAI();
+        const std::vector<uint32_t> stepNumbers = showStepNumbers ? currentHero->getRouteStepNumbers() : std::vector<uint32_t>();
+        size_t stepPosition = static_cast<size_t>( std::distance( path.begin(), currentStep ) );
+        std::vector<std::pair<fheroes2::Point, uint32_t>> stepLabels;
+
+        for ( ; currentStep != path.end(); ++currentStep, ++stepPosition ) {
             const int32_t tileIndex = currentStep->GetIndex();
             const fheroes2::Point & mp = Maps::GetPoint( tileIndex );
 
@@ -756,6 +767,24 @@ void Interface::GameArea::Redraw( fheroes2::Image & dst, int flag, bool isPuzzle
 
             const fheroes2::Sprite & routeSprite = Assets::getImage( ( ( greenColorSteps < 0 ) ? ICN::ROUTERED : ICN::ROUTE ), routeSpriteIndex );
             BlitOnTile( dst, routeSprite, routeSprite.x() - 12, routeSprite.y() + 2, mp, false, 255 );
+
+            if ( showStepNumbers && stepPosition < stepNumbers.size() ) {
+                stepLabels.emplace_back( mp, stepNumbers[stepPosition] );
+            }
+        }
+
+        // The numbers are drawn after all the arrows, so no arrow covers a number
+        for ( const auto & [mp, stepNumber] : stepLabels ) {
+            const fheroes2::Point tileOffset = GetRelativeTilePosition( mp );
+            const fheroes2::Text number( std::to_string( stepNumber ), fheroes2::FontType::smallWhite() );
+
+            // Beside the arrow, in the lower right corner of the tile
+            const int32_t x = tileOffset.x + fheroes2::tileWidthPx - number.width() - 1;
+            const int32_t y = tileOffset.y + fheroes2::tileWidthPx - 11;
+
+            if ( _windowROI & fheroes2::Point( x, y ) ) {
+                number.draw( x, y, dst );
+            }
         }
     }
 

@@ -23,6 +23,8 @@
 
 #include "cursor.h"
 #include "dialog.h" // IWYU pragma: associated
+#include "dialog_system_options.h"
+#include "ui_language.h"
 #include "game_exit.h"
 #include "game_hotkeys.h"
 #include "game_interface.h"
@@ -156,4 +158,63 @@ fheroes2::GameMode Dialog::FileOptions()
 {
     const fheroes2::GameMode result = selectFileOption();
     return result;
+}
+
+fheroes2::GameMode Dialog::ComputerOptions()
+{
+    const CursorRestorer cursorRestorer( true, Cursor::POINTER );
+
+    fheroes2::Display & display = fheroes2::Display::instance();
+
+    const bool isEvilInterface = Settings::Get().isEvilInterfaceEnabled();
+
+    fheroes2::StandardWindow background( 260, 170, true, display );
+
+    fheroes2::ButtonSprite buttonFiles;
+    fheroes2::ButtonSprite buttonSettings;
+
+    background.renderTextAdaptedButtonSprite( buttonFiles, fheroes2::getSupportedText( gettext_noop( "SAVE / LOAD / QUIT" ), fheroes2::FontType::buttonReleasedWhite() ),
+                                              { 0, 18 }, fheroes2::StandardWindow::Padding::TOP_CENTER );
+    background.renderTextAdaptedButtonSprite( buttonSettings, fheroes2::getSupportedText( gettext_noop( "SETTINGS" ), fheroes2::FontType::buttonReleasedWhite() ),
+                                              { 0, 78 }, fheroes2::StandardWindow::Padding::TOP_CENTER );
+
+    fheroes2::Button buttonCancel;
+    background.renderButton( buttonCancel, isEvilInterface ? ICN::BUTTON_SMALL_CANCEL_EVIL : ICN::BUTTON_SMALL_CANCEL_GOOD, 0, 1, { 0, 8 },
+                             fheroes2::StandardWindow::Padding::BOTTOM_CENTER );
+
+    display.render( background.totalArea() );
+
+    LocalEvent & le = LocalEvent::Get();
+
+    while ( le.HandleEvents() ) {
+        buttonFiles.drawOnState( le.isMouseLeftButtonPressedAndHeldInArea( buttonFiles.area() ) );
+        buttonSettings.drawOnState( le.isMouseLeftButtonPressedAndHeldInArea( buttonSettings.area() ) );
+        buttonCancel.drawOnState( le.isMouseLeftButtonPressedAndHeldInArea( buttonCancel.area() ) );
+
+        if ( le.MouseClickLeft( buttonFiles.area() ) ) {
+            return selectFileOption();
+        }
+
+        if ( le.MouseClickLeft( buttonSettings.area() ) ) {
+            fheroes2::showSystemOptionsDialog();
+            return fheroes2::GameMode::CANCEL;
+        }
+
+        if ( le.MouseClickLeft( buttonCancel.area() ) || Game::HotKeyCloseWindow() ) {
+            break;
+        }
+
+        if ( le.isMouseRightButtonPressedInArea( buttonFiles.area() ) ) {
+            fheroes2::showStandardTextMessage( _( "File Options" ), _( "Bring up the file options menu, allowing you to load, save, start a new game or quit." ),
+                                               Dialog::ZERO );
+        }
+        else if ( le.isMouseRightButtonPressedInArea( buttonSettings.area() ) ) {
+            fheroes2::showStandardTextMessage( _( "System Options" ), _( "Bring up the system options menu, allowing you to customize your game." ), Dialog::ZERO );
+        }
+        else if ( le.isMouseRightButtonPressedInArea( buttonCancel.area() ) ) {
+            fheroes2::showStandardTextMessage( _( "Cancel" ), _( "Exit this menu without doing anything." ), Dialog::ZERO );
+        }
+    }
+
+    return fheroes2::GameMode::CANCEL;
 }

@@ -62,8 +62,11 @@ namespace Interface
 
     private:
         void _setButtonStatus();
+        void _applyLayout();
 
         AdventureMap & _interface;
+
+        bool _isSimultaneousLayout{ false };
 
         fheroes2::Button _buttonNextHero;
         fheroes2::Button _buttonHeroMovement;

@@ -531,6 +531,26 @@ public:
     // Simultaneous turns: removes the last stop of the plotted route. Removes the whole route if only one stop is left.
     void removeLastWaypoint();
 
+    // Simultaneous turns: the hero waits one step at the end of the plotted route (the Hold button).
+    void addHold();
+
+    // Simultaneous turns: true if a wait was plotted for the tile the hero stands on; takes one wait away. Used by the walk, one wait per step.
+    bool consumeHoldHere();
+
+    bool hasHolds() const
+    {
+        return !_holdTiles.empty();
+    }
+
+    void clearHolds()
+    {
+        _holdTiles.clear();
+    }
+
+    // Simultaneous turns: the step (1, 2, 3 ...) at which the hero arrives at each tile of the plotted route. Terrain penalties make a step last longer
+    // and the waits count as steps. Same clock as the walk uses.
+    std::vector<uint32_t> getRouteStepNumbers() const;
+
     // Simultaneous turns: forgets all stops (used when the player resets the route).
     void clearWaypoints()
     {
@@ -814,6 +834,8 @@ private:
 
     // The stops of a route with several stops, in the order they will be visited (the last one is the final destination). Empty for a simple route.
     std::vector<int32_t> _waypoints;
+    // Tiles where the hero waits, one entry per click on the Hold button
+    std::vector<int32_t> _holdTiles;
     bool _isExploringFog{ false };
 
     // Stops that the player chose in unexplored ground.
