@@ -65,16 +65,18 @@ int main( int argc, char ** argv )
 
 #if defined( __EMSCRIPTEN__ )
     // The page cannot continue after the game has quit (black, unresponsive canvas): save files and return to the launcher.
-    EM_ASM( {
-        var reload = function() { location.reload(); };
-        try {
-            FS.syncfs( false, reload );
-            setTimeout( reload, 1500 );
-        }
-        catch ( e ) {
-            reload();
-        }
-    } );
+    if ( result == EXIT_SUCCESS ) {
+        EM_ASM( {
+            var reload = function() { location.reload(); };
+            try {
+                FS.syncfs( false, reload );
+                setTimeout( reload, 10000 );
+            }
+            catch ( e ) {
+                reload();
+            }
+        } );
+    }
 #endif
 
     return result;

@@ -782,9 +782,7 @@ void Interface::GameArea::Redraw( fheroes2::Image & dst, int flag, bool isPuzzle
             const int32_t x = tileOffset.x + fheroes2::tileWidthPx - number.width() - 1;
             const int32_t y = tileOffset.y + fheroes2::tileWidthPx - 11;
 
-            if ( _windowROI & fheroes2::Point( x, y ) ) {
-                number.draw( x, y, dst );
-            }
+            number.drawInRoi( x, y, dst, _windowROI );
         }
     }
 

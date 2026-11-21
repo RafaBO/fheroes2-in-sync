@@ -1213,6 +1213,12 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
     }
 
     if ( walkers.empty() ) {
+        for ( Heroes * hero : heroes ) {
+            if ( hero != nullptr ) {
+                hero->clearHolds();
+            }
+        }
+
         return fheroes2::GameMode::END_TURN;
     }
 

@@ -1517,6 +1517,12 @@ void Heroes::removeLastWaypoint()
             _holdTiles.erase( std::next( it ).base() );
             return;
         }
+
+        // A wait left on a tile that is no longer the end of the route (the route changed): the last click on the Hold button is undone anyway
+        if ( !_holdTiles.empty() && !_path.isValidForMovement() ) {
+            _holdTiles.pop_back();
+            return;
+        }
     }
 
     if ( _waypoints.size() > 1 ) {
