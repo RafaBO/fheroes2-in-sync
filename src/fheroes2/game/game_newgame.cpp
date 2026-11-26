@@ -542,9 +542,7 @@ fheroes2::GameMode Game::NewGame( const bool isProbablyDemoVersion )
             if ( HotKeyPressEvent( HotKeyEvent::MAIN_MENU_MULTI ) || le.MouseClickLeft( buttonMultiGame.area() ) ) {
                 if ( Online::isAvailable()
                      && fheroes2::showStandardTextMessage( _( "Multi-Player Game" ),
-                                                           _( "Yes: play over the internet with a friend (one of you hosts a game, the other joins with a room code).
-
-No: play Hot Seat on this device." ),
+                                                           _( "Yes: play over the internet with a friend (one of you hosts a game, the other joins with a room code).\n\nNo: play Hot Seat on this device." ),
                                                            Dialog::YES | Dialog::NO )
                             == Dialog::YES ) {
                     return Online::runLobby();

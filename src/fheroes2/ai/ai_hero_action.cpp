@@ -88,7 +88,7 @@ namespace
         // accumulate colors
         PlayerColorsSet colors = 0;
 
-        if ( Settings::Get().GameType() & Game::TYPE_HOTSEAT ) {
+        if ( Settings::Get().GameType() & Game::TYPE_MULTI ) {
             const PlayerColorsVector vcolors( Players::HumanColors() );
 
             for ( const PlayerColor color : vcolors ) {
