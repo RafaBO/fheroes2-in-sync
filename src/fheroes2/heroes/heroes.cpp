@@ -1622,6 +1622,17 @@ void Heroes::removeLastWaypoint()
     _path.Reset();
 }
 
+void Heroes::writeSimultaneousPlan( OStreamBase & stream ) const
+{
+    stream << _waypoints << _holdTiles << _isExploringFog << _fogStops << _isFightKnownAtPlanning;
+}
+
+void Heroes::readSimultaneousPlan( IStreamBase & stream )
+{
+    stream >> _waypoints >> _holdTiles >> _isExploringFog >> _fogStops >> _isFightKnownAtPlanning;
+    _isRouteSetAside = false;
+}
+
 void Heroes::addWaypoint( const int32_t dstIdx )
 {
     // A last stop in unexplored territory cannot be followed by other stops. A new click replaces it.

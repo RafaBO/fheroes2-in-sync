@@ -528,6 +528,10 @@ public:
     // Simultaneous turns: adds one more stop to the plotted route, so the hero walks through all stops in order.
     void addWaypoint( const int32_t dstIdx );
 
+    // Online play: the plotted route (stops, waits) as it is sent to the host, and read back there.
+    void writeSimultaneousPlan( OStreamBase & stream ) const;
+    void readSimultaneousPlan( IStreamBase & stream );
+
     // Simultaneous turns: removes the last stop of the plotted route. Removes the whole route if only one stop is left.
     void removeLastWaypoint();
 

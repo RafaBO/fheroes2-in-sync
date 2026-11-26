@@ -50,7 +50,7 @@ namespace Game
         // TYPE_LOADFILE used in the Settings::LoadedGameVersion, if you change that value,
         // change in that function as well.
         TYPE_LOADFILE = 0x80,
-        TYPE_MULTI = TYPE_HOTSEAT
+        TYPE_MULTI = TYPE_HOTSEAT | TYPE_NETWORK
     };
 
     void runMainGameLoop();

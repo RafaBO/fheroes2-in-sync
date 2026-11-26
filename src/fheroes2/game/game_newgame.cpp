@@ -46,6 +46,7 @@
 #include "game_io.h"
 #include "game_mainmenu_ui.h"
 #include "game_mode.h"
+#include "game_online.h"
 #include "game_video.h"
 #include "game_video_type.h"
 #include "icn.h"
@@ -539,6 +540,16 @@ fheroes2::GameMode Game::NewGame( const bool isProbablyDemoVersion )
                 return fheroes2::GameMode::NEW_BATTLE_ONLY;
             }
             if ( HotKeyPressEvent( HotKeyEvent::MAIN_MENU_MULTI ) || le.MouseClickLeft( buttonMultiGame.area() ) ) {
+                if ( Online::isAvailable()
+                     && fheroes2::showStandardTextMessage( _( "Multi-Player Game" ),
+                                                           _( "Yes: play over the internet with a friend (one of you hosts a game, the other joins with a room code).
+
+No: play Hot Seat on this device." ),
+                                                           Dialog::YES | Dialog::NO )
+                            == Dialog::YES ) {
+                    return Online::runLobby();
+                }
+
                 mainModeButtons.disable();
                 emptyDialog.restore();
                 buttonHotSeat.enable();

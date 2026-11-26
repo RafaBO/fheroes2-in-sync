@@ -810,6 +810,11 @@ void Settings::setSimultaneousTurns( bool enable )
 
 bool Settings::isSimultaneousTurnsEnabled() const
 {
+    // Online games are always played with simultaneous turns.
+    if ( ( game_type & 0x08 ) != 0 ) {
+        return true;
+    }
+
     return _gameOptions.Modes( GAME_SIMULTANEOUS_TURNS );
 }
 

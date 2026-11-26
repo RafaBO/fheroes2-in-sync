@@ -53,6 +53,7 @@
 #include "game_exit.h"
 #include "game_hotkeys.h"
 #include "game_interface.h" // IWYU pragma: associated
+#include "game_online.h"
 #include "game_io.h"
 #include "game_mode.h"
 #include "game_over.h"
@@ -748,7 +749,24 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
     const bool isAutoPlaytestAnimationEnabled{ fheroes2::AutoPlaytest::instance().isAnimationEnabled() };
 
     const bool isHotSeatGame = conf.IsGameType( Game::TYPE_HOTSEAT );
-    if ( !isHotSeatGame ) {
+    const bool isNetworkGame = Online::isNetworkGame();
+
+    // An online game: the guest swaps in a new snapshot every day, which comes back here without a fade between the days.
+    const bool isNetworkReload = Online::isReloadingForNextDay();
+    Online::setReloadingForNextDay( false );
+
+    if ( isNetworkGame ) {
+        Online::assignColors();
+
+        if ( Online::localColor() == PlayerColor::NONE ) {
+            fheroes2::showStandardTextMessage( _( "Online game" ), _( "This map needs exactly two human players for an online game." ), Dialog::OK );
+            Online::leaveSession( "wrong map setup" );
+            return fheroes2::GameMode::MAIN_MENU;
+        }
+
+        conf.SetCurrentColor( Online::localColor() );
+    }
+    else if ( !isHotSeatGame ) {
         // It is not a Hot Seat (multiplayer) game so we set current color to the only human player.
         conf.SetCurrentColor( static_cast<PlayerColor>( Players::HumanColors() ) );
     }
@@ -763,18 +781,26 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
     // Prepare for render the whole game interface with adventure map filled with fog as it was not uncovered by 'updateMapFogDirections()'.
     redraw( REDRAW_GAMEAREA | REDRAW_RADAR | REDRAW_ICONS | REDRAW_BUTTONS | REDRAW_STATUS | REDRAW_BORDER );
 
-    bool isLoadedFromSave = conf.LoadedGameVersion();
+    // In an online game the snapshot of every day is loaded like a save file, but it holds the state at the start of a day: the day has been started
+    // by the host already and the player's turn begins normally.
+    bool isLoadedFromSave = isNetworkGame ? false : conf.LoadedGameVersion();
     bool skipTurns = isLoadedFromSave;
+    bool isNewDayAlreadyStarted = isNetworkGame && Online::isGuest();
 
     // Set need of fade-in of game screen.
-    Game::setDisplayFadeIn();
+    if ( !isNetworkReload ) {
+        Game::setDisplayFadeIn();
+    }
 
     GameOver::Result & gameResult = GameOver::Result::Get();
     fheroes2::GameMode res = fheroes2::GameMode::END_TURN;
 
+    // Online game: how a wait for the other player ended, if it did not end well.
+    Online::WaitResult networkEndReason = Online::WaitResult::DONE;
+
     std::vector<Player *> sortedPlayers = conf.GetPlayers().getVector();
     std::sort( sortedPlayers.begin(), sortedPlayers.end(), SortPlayers );
-    if ( !isLoadedFromSave || world.CountDay() == 1 ) {
+    if ( ( !isLoadedFromSave && !( isNetworkGame && world.CountDay() > 1 ) ) || world.CountDay() == 1 ) {
         // Clear fog around heroes, castles and mines for all players when starting a new map or if the save was done at the first day.
         for ( Player * player : sortedPlayers ) {
             world.ClearFog( player->GetColor() );
@@ -799,9 +825,11 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
     }
 
     while ( res == fheroes2::GameMode::END_TURN ) {
-        if ( !isLoadedFromSave ) {
+        if ( !isLoadedFromSave && !isNewDayAlreadyStarted ) {
             world.NewDay();
         }
+
+        isNewDayAlreadyStarted = false;
 
         // Check if the game is over at the beginning of a new day
         res = gameResult.checkGameOver();
@@ -822,6 +850,15 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
         }
 
         res = fheroes2::GameMode::END_TURN;
+
+        if ( isNetworkGame ) {
+            if ( Online::isHost() ) {
+                Online::hostPublishDay();
+            }
+            else {
+                Online::guestBeginDay();
+            }
+        }
 
         // Simultaneous turns (experimental, single human player only): the human plots routes, the computer players choose their routes,
         // and then all heroes walk together.
@@ -848,6 +885,11 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
             // Player with a color equal to conf.CurrentColor() has been found, there is no need for further skips
             skipTurns = false;
+
+            // Online game: this computer plays only its own colour. The host also plays the computer players, the other human is on the other side.
+            if ( isNetworkGame && ( Online::isGuest() ? player->GetColor() != Online::localColor() : Online::isRemoteColor( player->GetColor() ) ) ) {
+                continue;
+            }
 
             const PlayerColor playerColor = player->GetColor();
             Kingdom & kingdom = world.GetKingdom( playerColor );
@@ -1022,6 +1064,35 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
             isLoadedFromSave = false;
         }
 
+        if ( isNetworkGame && res == fheroes2::GameMode::END_TURN && !skipTurns ) {
+            if ( Online::isGuest() ) {
+                // The guest does not walk anything: it hands in its plan and receives the game after the day.
+                const Online::WaitResult waitResult = Online::guestSendPlanAndLoadNextDay();
+
+                if ( waitResult == Online::WaitResult::DONE ) {
+                    Online::setReloadingForNextDay( true );
+                    res = fheroes2::GameMode::START_GAME;
+                }
+                else {
+                    networkEndReason = waitResult;
+                    res = waitResult == Online::WaitResult::QUIT ? fheroes2::GameMode::QUIT_GAME : fheroes2::GameMode::MAIN_MENU;
+                }
+            }
+            else {
+                const Online::WaitResult waitResult = Online::hostCollectGuestPlan();
+
+                if ( waitResult == Online::WaitResult::DONE ) {
+                    for ( Heroes * hero : world.GetKingdom( Online::remoteColor() ).GetHeroes() ) {
+                        simultaneousHeroes.push_back( hero );
+                    }
+                }
+                else {
+                    networkEndReason = waitResult;
+                    res = waitResult == Online::WaitResult::QUIT ? fheroes2::GameMode::QUIT_GAME : fheroes2::GameMode::MAIN_MENU;
+                }
+            }
+        }
+
         if ( isSimultaneousTurns && res == fheroes2::GameMode::END_TURN && !skipTurns ) {
             // All players have planned. Walk all heroes together; computer heroes that still have movement left plan again and continue.
             // How often the computer players may plan again during the walk depends on the difficulty (owner's decision): never on Easy and
@@ -1140,11 +1211,23 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
     // If we are here, the res value should never be fheroes2::GameMode::END_TURN
     assert( res != fheroes2::GameMode::END_TURN );
 
-    Game::setDisplayFadeIn();
+    if ( isNetworkGame && !( res == fheroes2::GameMode::START_GAME && Online::isReloadingForNextDay() ) ) {
+        // The online game is over for this player (or for both): tell the other one and close the link.
+        if ( networkEndReason == Online::WaitResult::PEER_LEFT ) {
+            const std::string text = Online::peerLeftText();
+            fheroes2::showStandardTextMessage( _( "Online game" ), text.empty() ? std::string( _( "The other player has left the game." ) ) : text, Dialog::OK );
+        }
+
+        Online::leaveSession( networkEndReason == Online::WaitResult::DONE ? std::string( _( "The game is over." ) ) : std::string( _( "The other player left the game." ) ) );
+    }
+
+    if ( !( isNetworkGame && res == fheroes2::GameMode::START_GAME ) ) {
+        Game::setDisplayFadeIn();
+    }
 
     // Do not use fade-out effect when exiting to Highscores screen as in this case name input dialog will be rendered next
-    // or when running in auto playtest mode.
-    if ( res != fheroes2::GameMode::HIGHSCORES_STANDARD && !isAutoPlaytest ) {
+    // or when running in auto playtest mode. Between the days of an online game the screen stays as it is.
+    if ( res != fheroes2::GameMode::HIGHSCORES_STANDARD && !isAutoPlaytest && !( isNetworkGame && res == fheroes2::GameMode::START_GAME ) ) {
         fheroes2::fadeOutDisplay();
     }
 
@@ -1194,7 +1277,7 @@ namespace
 
         // A route of the computer player ends at the first object it wants to visit. If something new has appeared before the end of the route, the
         // computer player plans again.
-        if ( hero.isControlAI() && path.size() > 1 && ( MP2::isNeedStayFront( type ) || hero.isShipMaster() != tile.isWater() ) ) {
+        if ( hero.isControlAI() && !Online::isRemoteColor( hero.GetColor() ) && path.size() > 1 && ( MP2::isNeedStayFront( type ) || hero.isShipMaster() != tile.isWater() ) ) {
             return false;
         }
 
@@ -1204,6 +1287,9 @@ namespace
 
 fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std::vector<Heroes *> & heroes )
 {
+    // Online game: the heroes of the other human walk as if a computer player owned them (their routes were plotted already).
+    const Online::RemoteAsComputer remoteAsComputer;
+
     std::vector<Heroes *> walkers;
 
     for ( Heroes * hero : heroes ) {
@@ -1368,7 +1454,7 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
                 continue;
             }
 
-            if ( !hero->isControlAI() && !isFrontStepPassable( *hero ) ) {
+            if ( ( !hero->isControlAI() || Online::isRemoteColor( hero->GetColor() ) ) && !isFrontStepPassable( *hero ) ) {
                 // The route was planned through ground that was not known. Plan it again from here.
                 hero->replanWaypointPath();
 
