@@ -11,7 +11,9 @@
     const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const CHUNK_SIZE = 16000;
     const PING_EVERY_MS = 2000;
-    const SILENCE_LIMIT_MS = 12000;
+    const SILENCE_LIMIT_MS = 30000;
+    const REPLACE_AFTER_SILENT_MS = 4000;
+    const CLOSE_DELAY_MS = 800;
     const REJOIN_EVERY_MS = 3000;
     const JOIN_TIMEOUT_MS = 20000;
 
@@ -86,11 +88,13 @@
         const index = view.getUint16(5, true);
         const count = view.getUint16(7, true);
         const payload = frame.subarray(9);
+        if (count === 0 || index >= count) return;
         if (count === 1) {
             net._rx.push(payload.slice());
             return;
         }
         let entry = net._partial.get(id);
+        if (entry && entry.count !== count) return;
         if (!entry) {
             entry = { count, parts: new Array(count), got: 0 };
             net._partial.set(id, entry);
@@ -115,9 +119,14 @@
 
     function startHeartbeat() {
         if (net._timer) return;
+        let lastTick = Date.now();
         net._timer = setInterval(() => {
+            const now = Date.now();
+            const wasFrozen = now - lastTick > PING_EVERY_MS * 3;
+            lastTick = now;
             if (net.state !== 'connected') return;
-            if (Date.now() - net._lastRx > SILENCE_LIMIT_MS) {
+            if (wasFrozen) net._lastRx = now; // this page was busy, so the silence says nothing about the other side
+            if (now - net._lastRx > SILENCE_LIMIT_MS) {
                 linkLost();
                 return;
             }
@@ -141,6 +150,7 @@
         const opened = () => {
             if (gen !== net._gen) return;
             clearTimeout(net._joinTimer);
+            if (net._conn && net._conn !== conn) { try { net._conn.close(); } catch (e) { /* ignore */ } }
             net._conn = conn;
             net._lastRx = Date.now();
             net._everConnected = true;
@@ -205,7 +215,8 @@
         peer.on('connection', conn => {
             if (gen !== net._gen) return;
             // Only one guest. A second link is accepted only if the first one is gone (the guest coming back).
-            if (net._conn && net._conn.open) { conn.on('open', () => conn.close()); return; }
+            if (net._conn && net._conn.open && Date.now() - net._lastRx < REPLACE_AFTER_SILENT_MS) { conn.on('open', () => conn.close()); return; }
+            if (net._conn) { try { net._conn.close(); } catch (e) { /* ignore */ } net._conn = null; }
             attach(conn);
         });
         peer.on('disconnected', () => { if (gen === net._gen && !peer.destroyed) { try { peer.reconnect(); } catch (e) { /* retry on next event */ } } });
@@ -229,8 +240,9 @@
     net.host = function () {
         reset('host');
         net.state = 'starting';
+        const hostGen = net._gen;
         loadPeerLibrary(ok => {
-            if (net.role !== 'host' || net.state !== 'starting') return;
+            if (hostGen !== net._gen || net.role !== 'host' || net.state !== 'starting') return;
             if (!ok) return fail('Could not load the online play library. Check the internet connection.');
             openHostPeer(0);
         });
@@ -293,7 +305,18 @@
     net.nextSize = function () { return net._rx.length ? net._rx[0].length : -1; };
     net.pop = function () { return net._rx.shift(); };
 
-    net.close = function () { reset(''); };
+    net.close = function () {
+        // Let a last message (the "I leave" note) go out before the link is torn down.
+        const conn = net._conn;
+        const peer = net._peer;
+        net._conn = null;
+        net._peer = null;
+        reset('');
+        setTimeout(() => {
+            try { if (conn) conn.close(); } catch (e) { /* ignore */ }
+            try { if (peer) peer.destroy(); } catch (e) { /* ignore */ }
+        }, CLOSE_DELAY_MS);
+    };
 
     // Codes the C++ side reads.
     net.stateCode = function () {

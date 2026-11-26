@@ -444,10 +444,14 @@ namespace
             // A hero that the host's game gave to somebody else in the meantime cannot be taken (both hired the same hero on the same day).
             if ( hero->GetColor() != PlayerColor::NONE && hero->GetColor() != color ) {
                 DEBUG_LOG( DBG_GAME, DBG_WARN, "online: hero " << id << " belongs to another player, the guest's copy is ignored" )
+
+                auto & guestHeroes = kingdom.GetHeroes();
+                guestHeroes.erase( std::remove( guestHeroes.begin(), guestHeroes.end(), hero ), guestHeroes.end() );
                 continue;
             }
 
             const int32_t oldIndex = hero->GetIndex();
+            const MP2::MapObjectType oldObjectUnderHero = hero->getObjectTypeUnderHero();
 
             ROStreamBuf sub( std::move( chunk ) );
             sub.setBigendian( true );
@@ -458,6 +462,8 @@ namespace
             if ( oldIndex != newIndex ) {
                 // Hired, dismissed or moved by a spell during planning: the map has to follow.
                 if ( oldIndex >= 0 && world.getTile( oldIndex ).getMainObjectType() == MP2::OBJ_HERO ) {
+                    // Reading the hero replaced what he stands on; the old tile needs the old value to be put right.
+                    hero->setObjectTypeUnderHero( oldObjectUnderHero );
                     world.getTile( oldIndex ).setHero( nullptr );
                 }
 
@@ -603,7 +609,7 @@ namespace
 
         const CursorRestorer cursorRestorer( true, Cursor::POINTER );
 
-        DialogWindow dialog( 400, 190, _( "Online game" ), _( "Leave game" ) );
+        DialogWindow dialog( 400, 190, _( "Online game" ), _( "LEAVE" ) );
         dialog.setBody( makeText() );
 
         LocalEvent & le = LocalEvent::Get();
@@ -865,6 +871,7 @@ namespace Online
         }
 
         sessionRole = Role::NONE;
+        Settings::Get().SetGameType( Settings::Get().GameType() & ~Game::TYPE_NETWORK );
         hostColor = PlayerColor::NONE;
         guestColor = PlayerColor::NONE;
         hostSnapshot.clear();
@@ -952,7 +959,7 @@ namespace Online
         // Two buttons are needed in the first two states, so the window is built with a second button next to the first one.
         const auto buildWindow = [&]( const char * firstButton ) { window = std::make_unique<DialogWindow>( 420, 230, _( "Online game" ), firstButton ); };
 
-        buildWindow( _( "Cancel" ) );
+        buildWindow( _( "CANCEL" ) );
 
         // The choose state is drawn as plain text with three clickable lines to keep the screen simple: H = host, J = join.
         window->setBody( _( "Play with a friend over the internet.\n\nPress H to host a game (you get a room code).\nPress J to join a game (you type the room code).\n\nOnly two human players are supported." ) );
@@ -962,7 +969,7 @@ namespace Online
         while ( true ) {
             if ( !le.HandleEvents( true, true ) ) {
                 if ( Game::processExitEvent() == fheroes2::GameMode::QUIT_GAME ) {
-                    linkClose();
+                    leaveSession( "" );
                     return fheroes2::GameMode::QUIT_GAME;
                 }
 
@@ -973,8 +980,7 @@ namespace Online
             window->renderAll();
 
             if ( le.MouseClickLeft( window->button().area() ) || Game::HotKeyPressEvent( Game::HotKeyEvent::DEFAULT_CANCEL ) ) {
-                linkClose();
-                sessionRole = Role::NONE;
+                leaveSession( "" );
                 return fheroes2::GameMode::MAIN_MENU;
             }
 

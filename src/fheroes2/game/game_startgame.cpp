@@ -853,7 +853,11 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
         if ( isNetworkGame ) {
             if ( Online::isHost() ) {
-                Online::hostPublishDay();
+                if ( !Online::hostPublishDay() ) {
+                    fheroes2::showStandardTextMessage( _( "Online game" ), _( "The game could not be sent to the other player." ), Dialog::OK );
+                    res = fheroes2::GameMode::MAIN_MENU;
+                    break;
+                }
             }
             else {
                 Online::guestBeginDay();
@@ -1083,7 +1087,9 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
 
                 if ( waitResult == Online::WaitResult::DONE ) {
                     for ( Heroes * hero : world.GetKingdom( Online::remoteColor() ).GetHeroes() ) {
-                        simultaneousHeroes.push_back( hero );
+                        if ( std::find( simultaneousHeroes.begin(), simultaneousHeroes.end(), hero ) == simultaneousHeroes.end() ) {
+                            simultaneousHeroes.push_back( hero );
+                        }
                     }
                 }
                 else {

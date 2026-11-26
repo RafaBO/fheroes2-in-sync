@@ -50,6 +50,7 @@
 #include "game_intro.h"
 #include "game_mainmenu_ui.h"
 #include "game_mode.h"
+#include "game_online.h"
 #include "game_video.h"
 #include "game_video_type.h"
 #include "icn.h"
@@ -150,6 +151,11 @@ void Game::runMainGameLoop()
             exit = true;
             break;
         case fheroes2::GameMode::MAIN_MENU:
+            // Backing out of an online game before it started (or any other way to the menu) closes the link.
+            if ( Online::role() != Online::Role::NONE ) {
+                Online::leaveSession( "" );
+            }
+
             result = Game::MainMenu( isFirstGameRun );
             isFirstGameRun = false;
             break;
