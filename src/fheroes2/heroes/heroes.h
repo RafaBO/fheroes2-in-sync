@@ -551,6 +551,14 @@ public:
     // and the waits count as steps. Same clock as the walk uses.
     std::vector<uint32_t> getRouteStepNumbers() const;
 
+    // Simultaneous turns: the number shown on each tile of the plotted route as (tile index, step). A tile with waits shows the step at which the hero leaves
+    // it, and the tile where the hero stands shows it too when he waits there before his first step.
+    std::vector<std::pair<int32_t, uint32_t>> getRouteStepLabels() const;
+
+    // Simultaneous turns: the player chose not to fight monsters that were hidden in the fog when the route was plotted. The hero stops where he is and,
+    // with the Carry Movement option, keeps his remaining movement for the next day.
+    void stopBeforeFight();
+
     // Simultaneous turns: forgets all stops (used when the player resets the route).
     void clearWaypoints()
     {

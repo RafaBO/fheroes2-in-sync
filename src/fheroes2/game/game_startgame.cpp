@@ -27,6 +27,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <ostream>
@@ -1234,6 +1235,89 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
     size_t tick = 0;
     std::vector<uint32_t> credits( walkers.size(), 0 );
 
+    // Neutral monsters the human player could not see when the turn was passed. A hero who is about to run into one of them asks the player whether to fight.
+    std::set<int32_t> hiddenMonsters;
+    {
+        const PlayerColor humanColor = conf.CurrentColor();
+        const int32_t tileCount = world.w() * world.h();
+
+        for ( int32_t index = 0; index < tileCount; ++index ) {
+            const Maps::Tile & tile = world.getTile( index );
+
+            if ( tile.getMainObjectType() == MP2::OBJ_MONSTER && tile.isFog( humanColor ) ) {
+                hiddenMonsters.insert( index );
+            }
+        }
+    }
+
+    std::set<int32_t> acceptedFights;
+    std::set<const Heroes *> heroesAcceptedFight;
+
+    // Returns false if the player chose to stop in front of monsters that were hidden when the turn was passed.
+    const auto confirmHiddenFight = [this, &hiddenMonsters, &acceptedFights, &heroesAcceptedFight, &display]( Heroes & hero ) {
+        if ( hiddenMonsters.empty() || !hero.isControlHuman() ) {
+            return true;
+        }
+
+        const Maps::Indexes guards = Maps::getMonstersProtectingTile( hero.GetPath().GetFrontIndex() );
+
+        int32_t monsterIndex = -1;
+        for ( const int32_t guard : guards ) {
+            if ( hiddenMonsters.count( guard ) > 0 && acceptedFights.count( guard ) == 0 ) {
+                monsterIndex = guard;
+                break;
+            }
+        }
+
+        if ( monsterIndex < 0 ) {
+            return true;
+        }
+
+        const Maps::Tile & monsterTile = world.getTile( monsterIndex );
+        const Army monsterArmy( monsterTile );
+        const Troop * troop = monsterArmy.GetFirstValid();
+        if ( troop == nullptr ) {
+            return true;
+        }
+
+        const double heroStrength = std::max( 1.0, hero.GetArmy().GetStrength() );
+        const double ratio = monsterArmy.GetStrength() / heroStrength;
+
+        std::string danger;
+        if ( ratio < 0.35 ) {
+            danger = _( "They look like an easy fight." );
+        }
+        else if ( ratio < 0.8 ) {
+            danger = _( "They look like a fair fight." );
+        }
+        else if ( ratio < 1.5 ) {
+            danger = _( "They look like a hard fight." );
+        }
+        else {
+            danger = _( "They look like a very dangerous fight." );
+        }
+
+        std::string message = _( "%{hero} has found %{monsters} ahead that nobody had seen before. %{danger}\n\nYes: fight them and carry on.\nNo: stop here and keep the remaining movement for tomorrow." );
+        StringReplace( message, "%{hero}", hero.GetName() );
+        StringReplace( message, "%{monsters}", Army::SizeString( troop->GetCount() ) + " " + troop->GetMultiName() );
+        StringReplace( message, "%{danger}", danger );
+
+        _gameArea.SetCenter( hero.GetCenter() );
+        redraw( REDRAW_GAMEAREA | REDRAW_STATUS );
+        display.render();
+
+        const CursorRestorer cursorRestorer( true, Cursor::POINTER );
+
+        if ( fheroes2::showStandardTextMessage( _( "Monsters in the fog" ), std::move( message ), Dialog::YES | Dialog::NO ) == Dialog::YES ) {
+            acceptedFights.insert( monsterIndex );
+            heroesAcceptedFight.insert( &hero );
+            return true;
+        }
+
+        hero.stopBeforeFight();
+        return false;
+    };
+
     while ( isAnyHeroMoving ) {
         if ( !le.HandleEvents( false, true ) ) {
             if ( Game::processExitEvent() == fheroes2::GameMode::QUIT_GAME ) {
@@ -1246,6 +1330,8 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
         // One step for every hero. The hero who goes first changes with every step, so nobody is always first or last. A hero that steps onto a tile
         // occupied by a rival hero attacks it, as in the normal game.
         ++tick;
+
+        std::vector<Heroes *> stepping;
 
         for ( size_t walkerNumber = 0; walkerNumber < walkers.size(); ++walkerNumber ) {
             Heroes * hero = walkers[( walkerNumber + tick ) % walkers.size()];
@@ -1303,23 +1389,138 @@ fheroes2::GameMode Interface::AdventureMap::runSimultaneousResolution( const std
                 continue;
             }
 
-            hero->Move( true );
+            if ( !confirmHiddenFight( *hero ) ) {
+                continue;
+            }
 
-            if ( hero->isAction() ) {
-                hero->ResetAction();
+            stepping.push_back( hero );
+        }
 
-                const fheroes2::GameMode gameState = gameResult.checkGameOver();
+        // The steps of this round. Heroes the human player can see walk with the normal walking animation, all at the same time; the others jump.
+        const fheroes2::GameMode stepResult = [&]() {
+            const auto finishStep = [&]( Heroes & hero ) {
+                if ( hero.isAction() ) {
+                    hero.ResetAction();
+
+                    const fheroes2::GameMode gameState = gameResult.checkGameOver();
+                    if ( gameState != fheroes2::GameMode::CANCEL ) {
+                        return gameState;
+                    }
+                }
+
+                // The hero ends every step on the standing frame, so the next step starts with the checks of a fresh step (is the next tile still free?)
+                if ( hero.isActive() && hero.GetSpriteIndex() >= 0 && hero.GetSpriteIndex() < 45 ) {
+                    hero.SetSpriteIndex( hero.GetSpriteIndex() - hero.GetSpriteIndex() % 9 );
+                }
+
+                // The player agreed to fight monsters that were hidden: after a won fight the hero carries on along his route
+                if ( hero.isActive() && !hero.isMoveEnabled() && heroesAcceptedFight.erase( &hero ) > 0 && hero.GetPath().isValidForMovement()
+                     && hero.MayStillMove( false, true ) ) {
+                    hero.SetMove( true );
+                }
+
+                if ( hero.isActive() && hero.isMoveEnabled() ) {
+                    isAnyHeroMoving = true;
+                }
+                else if ( hero.isActive() ) {
+                    hero.SetMove( false );
+                }
+
+                return fheroes2::GameMode::CANCEL;
+            };
+
+            const bool isAnimationWanted = conf.HeroesMoveSpeed() != 10 && !conf.IsGameType( Game::TYPE_AUTO_PLAYTEST );
+            const PlayerColor humanColor = conf.CurrentColor();
+
+            std::vector<Heroes *> animated;
+            std::vector<Heroes *> jumping;
+
+            std::set<int32_t> targetTiles;
+
+            for ( Heroes * hero : stepping ) {
+                const int32_t target = hero->GetPath().GetFrontIndex();
+                const bool isSeen = !world.getTile( hero->GetIndex() ).isFog( humanColor ) || !world.getTile( target ).isFog( humanColor );
+
+                // Two heroes must not walk onto the same tile at the same time: the second one steps after the animation and meets or fights the first
+                if ( isAnimationWanted && isSeen && targetTiles.insert( target ).second ) {
+                    animated.push_back( hero );
+                }
+                else {
+                    jumping.push_back( hero );
+                }
+            }
+
+            int animationFrames = 0;
+
+            while ( !animated.empty() ) {
+                if ( !le.HandleEvents( false, true ) ) {
+                    if ( Game::processExitEvent() == fheroes2::GameMode::QUIT_GAME ) {
+                        return fheroes2::GameMode::QUIT_GAME;
+                    }
+                }
+
+                // A step takes at most a few dozen frames. If an animation does not end, the hero jumps instead so the game can never freeze here.
+                if ( ++animationFrames > 120 ) {
+                    for ( Heroes * hero : animated ) {
+                        jumping.push_back( hero );
+                    }
+
+                    animated.clear();
+                    break;
+                }
+
+                for ( auto it = animated.begin(); it != animated.end(); ) {
+                    Heroes * hero = *it;
+
+                    if ( !hero->isActive() ) {
+                        it = animated.erase( it );
+                        continue;
+                    }
+
+                    const bool isStepMade = hero->Move( false );
+
+                    if ( isStepMade || !hero->isActive() || !hero->isMoveEnabled() ) {
+                        const fheroes2::GameMode gameState = finishStep( *hero );
+                        if ( gameState != fheroes2::GameMode::CANCEL ) {
+                            return gameState;
+                        }
+
+                        it = animated.erase( it );
+                    }
+                    else {
+                        ++it;
+                    }
+                }
+
+                if ( Heroes * focusHero = GetFocusHeroes(); focusHero != nullptr && focusHero->isActive() ) {
+                    _gameArea.SetCenter( focusHero->GetCenter() );
+                    _gameArea.ShiftCenter( focusHero->getCurrentPixelOffset() );
+                }
+
+                redraw( REDRAW_GAMEAREA );
+                display.render();
+
+                fheroes2::delayforMs( 20 );
+            }
+
+            for ( Heroes * hero : jumping ) {
+                if ( !hero->isActive() ) {
+                    continue;
+                }
+
+                hero->Move( true );
+
+                const fheroes2::GameMode gameState = finishStep( *hero );
                 if ( gameState != fheroes2::GameMode::CANCEL ) {
                     return gameState;
                 }
             }
 
-            if ( hero->isActive() && hero->isMoveEnabled() ) {
-                isAnyHeroMoving = true;
-            }
-            else if ( hero->isActive() ) {
-                hero->SetMove( false );
-            }
+            return fheroes2::GameMode::CANCEL;
+        }();
+
+        if ( stepResult != fheroes2::GameMode::CANCEL ) {
+            return stepResult;
         }
 
         // The selected hero may have been defeated during this step. The selection moves to another hero (or a castle), otherwise the screen would be

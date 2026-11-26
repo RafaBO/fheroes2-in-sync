@@ -42,6 +42,7 @@
 #include "screen.h"
 #include "settings.h"
 #include "translations.h"
+#include "custom_adv_buttons_rgba.h"
 #include "game_assets.h"
 #include "image.h"
 #include "ui_dialog.h"
@@ -49,146 +50,6 @@
 
 namespace
 {
-    // Owner's 'Undo last stop' icon, drawn inside the 28 x 28 face of the 36 x 36 button. Each entry is x, y, colour (0 = dark outline, 1 = highlight).
-    constexpr int undoIconPixelCount = 136;
-    constexpr int undoIconPixels[undoIconPixelCount][3] = {
-        { 23, 4, 0 },
-        { 24, 4, 0 },
-        { 30, 4, 0 },
-        { 31, 4, 0 },
-        { 22, 5, 1 },
-        { 23, 5, 1 },
-        { 24, 5, 0 },
-        { 25, 5, 0 },
-        { 29, 5, 0 },
-        { 30, 5, 0 },
-        { 31, 5, 1 },
-        { 24, 6, 1 },
-        { 25, 6, 0 },
-        { 26, 6, 0 },
-        { 28, 6, 0 },
-        { 29, 6, 0 },
-        { 30, 6, 1 },
-        { 20, 7, 0 },
-        { 21, 7, 0 },
-        { 22, 7, 0 },
-        { 24, 7, 1 },
-        { 25, 7, 1 },
-        { 26, 7, 0 },
-        { 27, 7, 0 },
-        { 28, 7, 0 },
-        { 29, 7, 1 },
-        { 20, 8, 1 },
-        { 21, 8, 1 },
-        { 22, 8, 1 },
-        { 26, 8, 0 },
-        { 27, 8, 0 },
-        { 28, 8, 0 },
-        { 17, 9, 1 },
-        { 18, 9, 0 },
-        { 25, 9, 0 },
-        { 26, 9, 0 },
-        { 27, 9, 1 },
-        { 28, 9, 0 },
-        { 29, 9, 0 },
-        { 17, 10, 1 },
-        { 18, 10, 0 },
-        { 24, 10, 0 },
-        { 25, 10, 0 },
-        { 26, 10, 1 },
-        { 27, 10, 1 },
-        { 28, 10, 1 },
-        { 29, 10, 0 },
-        { 30, 10, 0 },
-        { 17, 11, 1 },
-        { 18, 11, 0 },
-        { 23, 11, 0 },
-        { 24, 11, 0 },
-        { 25, 11, 1 },
-        { 28, 11, 1 },
-        { 29, 11, 1 },
-        { 30, 11, 0 },
-        { 31, 11, 0 },
-        { 23, 12, 1 },
-        { 24, 12, 1 },
-        { 29, 12, 1 },
-        { 30, 12, 1 },
-        { 31, 12, 1 },
-        { 17, 14, 0 },
-        { 18, 14, 0 },
-        { 19, 14, 0 },
-        { 16, 15, 0 },
-        { 18, 15, 1 },
-        { 19, 15, 1 },
-        { 20, 15, 0 },
-        { 14, 16, 1 },
-        { 15, 16, 0 },
-        { 20, 16, 1 },
-        { 21, 16, 0 },
-        { 14, 17, 1 },
-        { 15, 17, 0 },
-        { 20, 17, 1 },
-        { 21, 17, 0 },
-        { 14, 18, 1 },
-        { 15, 18, 0 },
-        { 20, 18, 1 },
-        { 21, 18, 0 },
-        { 15, 19, 1 },
-        { 16, 19, 0 },
-        { 20, 19, 0 },
-        { 21, 19, 1 },
-        { 16, 20, 1 },
-        { 17, 20, 0 },
-        { 18, 20, 0 },
-        { 19, 20, 0 },
-        { 20, 20, 1 },
-        { 18, 21, 1 },
-        { 19, 21, 1 },
-        { 17, 23, 1 },
-        { 18, 23, 0 },
-        { 7, 24, 0 },
-        { 8, 24, 0 },
-        { 9, 24, 0 },
-        { 17, 24, 1 },
-        { 18, 24, 0 },
-        { 6, 25, 0 },
-        { 7, 25, 1 },
-        { 8, 25, 1 },
-        { 9, 25, 1 },
-        { 10, 25, 0 },
-        { 17, 25, 1 },
-        { 18, 25, 0 },
-        { 4, 26, 1 },
-        { 5, 26, 0 },
-        { 6, 26, 1 },
-        { 10, 26, 1 },
-        { 11, 26, 0 },
-        { 4, 27, 1 },
-        { 5, 27, 0 },
-        { 10, 27, 1 },
-        { 11, 27, 0 },
-        { 14, 27, 0 },
-        { 15, 27, 0 },
-        { 16, 27, 0 },
-        { 4, 28, 1 },
-        { 5, 28, 0 },
-        { 10, 28, 1 },
-        { 11, 28, 0 },
-        { 14, 28, 1 },
-        { 15, 28, 1 },
-        { 5, 29, 1 },
-        { 6, 29, 0 },
-        { 10, 29, 0 },
-        { 11, 29, 1 },
-        { 6, 30, 1 },
-        { 7, 30, 0 },
-        { 8, 30, 0 },
-        { 9, 30, 0 },
-        { 10, 30, 1 },
-        { 7, 31, 1 },
-        { 8, 31, 1 },
-        { 9, 31, 1 } };
-
     bool isSimultaneousPlanning()
     {
         const Settings & conf = Settings::Get();
@@ -196,9 +57,9 @@ namespace
         return conf.isSimultaneousTurnsEnabled() && !conf.IsGameType( Game::TYPE_HOTSEAT ) && !conf.IsGameType( Game::TYPE_AUTO_PLAYTEST );
     }
 
-    // Builds a button picture: the original button with its picture wiped out and the undo icon carved on it.
-    // Placeholder for the owner's hand icon: the pause sign (two bars) carved in the same way.
-    fheroes2::Sprite makeHoldButton( const fheroes2::Sprite & original, const int32_t offset, const bool isEvilInterface )
+    // Builds a button picture: the original button with its picture wiped out and the owner's icon (36 x 36 RGBA, drawn inside the 28 x 28 face) put on it.
+    // The pressed button shows the same icon one pixel lower and to the right.
+    fheroes2::Sprite makeIconButton( const fheroes2::Sprite & original, const int32_t offset, const uint8_t * rgba )
     {
         fheroes2::Sprite result( original );
 
@@ -235,19 +96,20 @@ namespace
             }
         }
 
-        const uint8_t dark = isEvilInterface ? fheroes2::GetColorId( 0x18, 0x18, 0x18 ) : fheroes2::GetColorId( 0x58, 0x28, 0x08 );
-        const uint8_t highlight = fheroes2::GetColorId( 0xFC, 0xFC, 0xFC );
+        constexpr int32_t iconSize = 36;
 
-        // Two bars, 6 pixels wide and 18 high, with a light edge on the left
-        for ( const int32_t barX : { 9, 20 } ) {
-            for ( int32_t y = 9; y < 27; ++y ) {
-                for ( int32_t x = barX; x < barX + 6; ++x ) {
-                    const int32_t px = x + offset;
-                    const int32_t py = y + offset;
+        for ( int32_t y = 0; y < iconSize; ++y ) {
+            for ( int32_t x = 0; x < iconSize; ++x ) {
+                const uint8_t * pixel = rgba + ( y * iconSize + x ) * 4;
+                if ( pixel[3] < 128 ) {
+                    continue;
+                }
 
-                    if ( px >= minX && px < maxX && py >= minY && py < maxY ) {
-                        image[py * width + px] = ( x == barX ) ? highlight : dark;
-                    }
+                const int32_t px = x + offset;
+                const int32_t py = y + offset;
+
+                if ( px >= minX && px < maxX && py >= minY && py < maxY ) {
+                    image[py * width + px] = fheroes2::GetColorId( pixel[0], pixel[1], pixel[2] );
                 }
             }
         }
@@ -255,56 +117,14 @@ namespace
         return result;
     }
 
+    fheroes2::Sprite makeHoldButton( const fheroes2::Sprite & original, const int32_t offset, const bool isEvilInterface )
+    {
+        return makeIconButton( original, offset, isEvilInterface ? kHaltButtonEvilIcon_rgba : kHaltButtonGoodIcon_rgba );
+    }
+
     fheroes2::Sprite makeUndoButton( const fheroes2::Sprite & original, const int32_t offset, const bool isEvilInterface )
     {
-        fheroes2::Sprite result( original );
-
-        const int32_t width = result.width();
-        const int32_t height = result.height();
-        if ( width < 12 || height < 12 ) {
-            return result;
-        }
-
-        uint8_t * image = result.image();
-        uint8_t * transform = result.singleLayer() ? nullptr : result.transform();
-
-        const int32_t minX = 4 + offset;
-        const int32_t minY = 4 + offset;
-        const int32_t maxX = std::min( width - 4 + offset, width );
-        const int32_t maxY = std::min( height - 4 + offset, height );
-
-        std::array<int32_t, 256> histogram{};
-        for ( int32_t y = minY; y < maxY; ++y ) {
-            for ( int32_t x = minX; x < maxX; ++x ) {
-                ++histogram[image[y * width + x]];
-            }
-        }
-
-        const uint8_t background = static_cast<uint8_t>( std::distance( histogram.begin(), std::max_element( histogram.begin(), histogram.end() ) ) );
-
-        for ( int32_t y = minY; y < maxY; ++y ) {
-            for ( int32_t x = minX; x < maxX; ++x ) {
-                image[y * width + x] = background;
-
-                if ( transform != nullptr ) {
-                    transform[y * width + x] = 0;
-                }
-            }
-        }
-
-        const uint8_t dark = isEvilInterface ? fheroes2::GetColorId( 0x18, 0x18, 0x18 ) : fheroes2::GetColorId( 0x58, 0x28, 0x08 );
-        const uint8_t highlight = fheroes2::GetColorId( 0xFC, 0xFC, 0xFC );
-
-        for ( const auto & pixel : undoIconPixels ) {
-            const int32_t x = pixel[0] + offset;
-            const int32_t y = pixel[1] + offset;
-
-            if ( x >= minX && x < maxX && y >= minY && y < maxY ) {
-                image[y * width + x] = pixel[2] != 0 ? highlight : dark;
-            }
-        }
-
-        return result;
+        return makeIconButton( original, offset, isEvilInterface ? kUndoButtonEvilIcon_rgba : kUndoButtonGoodIcon_rgba );
     }
 }
 

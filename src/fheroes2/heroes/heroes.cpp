@@ -1444,6 +1444,16 @@ void Heroes::storeMovePointsForNextDay()
     }
 }
 
+void Heroes::stopBeforeFight()
+{
+    _path.Reset();
+    clearWaypoints();
+    clearHolds();
+    SetMove( false );
+
+    storeMovePointsForNextDay();
+}
+
 namespace
 {
     // The tile where the hero stands when the plotted route is over (in front of the object, if the last step visits one from the neighbouring tile)
@@ -1504,6 +1514,82 @@ std::vector<uint32_t> Heroes::getRouteStepNumbers() const
     }
 
     return numbers;
+}
+
+std::vector<std::pair<int32_t, uint32_t>> Heroes::getRouteStepLabels() const
+{
+    std::vector<std::pair<int32_t, uint32_t>> labels;
+
+    if ( _path.empty() ) {
+        return labels;
+    }
+
+    std::vector<int32_t> holds = _holdTiles;
+
+    const auto takeHolds = [&holds]( const int32_t tile ) {
+        uint32_t count = 0;
+
+        for ( auto it = std::find( holds.begin(), holds.end(), tile ); it != holds.end(); it = std::find( holds.begin(), holds.end(), tile ) ) {
+            holds.erase( it );
+            ++count;
+        }
+
+        return count;
+    };
+
+    uint32_t round = 0;
+    uint32_t credit = 0;
+
+    // Waits on the tile where the hero stands
+    if ( const uint32_t waits = takeHolds( GetIndex() ); waits > 0 ) {
+        round += waits;
+        credit = 0;
+        labels.emplace_back( GetIndex(), round );
+    }
+
+    int32_t previousTile = -1;
+    uint32_t previousArrival = 0;
+
+    for ( const Route::Step & step : _path ) {
+        // Waits at the tile the step starts from: the number shown there is the step at which the hero leaves
+        if ( const uint32_t waits = takeHolds( step.GetFrom() ); waits > 0 ) {
+            round += waits;
+            credit = 0;
+
+            if ( previousTile >= 0 ) {
+                labels.emplace_back( previousTile, previousArrival + waits );
+            }
+        }
+
+        do {
+            ++round;
+        } while ( !Route::advanceStepClock( credit, step.GetPenalty() ) );
+
+        previousTile = step.GetIndex();
+        previousArrival = round;
+
+        labels.emplace_back( previousTile, round );
+    }
+
+    // Waits left at the end of the route show as the step at which the hero leaves the last tile
+    if ( const uint32_t waits = takeHolds( previousTile ); waits > 0 ) {
+        labels.emplace_back( previousTile, previousArrival + waits );
+    }
+
+    // A tile that has a wait shows one number: the later one
+    std::vector<std::pair<int32_t, uint32_t>> result;
+    for ( const auto & label : labels ) {
+        const auto it = std::find_if( result.begin(), result.end(), [&label]( const auto & item ) { return item.first == label.first; } );
+
+        if ( it == result.end() ) {
+            result.push_back( label );
+        }
+        else {
+            it->second = std::max( it->second, label.second );
+        }
+    }
+
+    return result;
 }
 
 void Heroes::removeLastWaypoint()

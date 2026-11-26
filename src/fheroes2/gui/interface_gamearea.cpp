@@ -741,11 +741,20 @@ void Interface::GameArea::Redraw( fheroes2::Image & dst, int flag, bool isPuzzle
 
         // Simultaneous turns: every mark of the route also shows the step at which the hero arrives there (difficult ground and waits count)
         const bool showStepNumbers = Settings::Get().isSimultaneousTurnsEnabled() && !currentHero->isControlAI();
-        const std::vector<uint32_t> stepNumbers = showStepNumbers ? currentHero->getRouteStepNumbers() : std::vector<uint32_t>();
-        size_t stepPosition = static_cast<size_t>( std::distance( path.begin(), currentStep ) );
         std::vector<std::pair<fheroes2::Point, uint32_t>> stepLabels;
 
-        for ( ; currentStep != path.end(); ++currentStep, ++stepPosition ) {
+        // While the hero walks the numbers would start again from 1, so they are only shown while the route is being plotted
+        if ( showStepNumbers && !currentHero->isMoveEnabled() ) {
+            for ( const auto & [labelTile, labelNumber] : currentHero->getRouteStepLabels() ) {
+                const fheroes2::Point & labelPoint = Maps::GetPoint( labelTile );
+
+                if ( extendedVisibleRoi & labelPoint ) {
+                    stepLabels.emplace_back( labelPoint, labelNumber );
+                }
+            }
+        }
+
+        for ( ; currentStep != path.end(); ++currentStep ) {
             const int32_t tileIndex = currentStep->GetIndex();
             const fheroes2::Point & mp = Maps::GetPoint( tileIndex );
 
@@ -768,9 +777,6 @@ void Interface::GameArea::Redraw( fheroes2::Image & dst, int flag, bool isPuzzle
             const fheroes2::Sprite & routeSprite = Assets::getImage( ( ( greenColorSteps < 0 ) ? ICN::ROUTERED : ICN::ROUTE ), routeSpriteIndex );
             BlitOnTile( dst, routeSprite, routeSprite.x() - 12, routeSprite.y() + 2, mp, false, 255 );
 
-            if ( showStepNumbers && stepPosition < stepNumbers.size() ) {
-                stepLabels.emplace_back( mp, stepNumbers[stepPosition] );
-            }
         }
 
         // The numbers are drawn after all the arrows, so no arrow covers a number
