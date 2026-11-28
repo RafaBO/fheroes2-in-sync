@@ -42,6 +42,7 @@
 #include "game_hotkeys.h"
 #include "game_mainmenu_ui.h"
 #include "game_mode.h"
+#include "game_online.h"
 #include "icn.h"
 #include "image.h"
 #include "localevent.h"
@@ -517,7 +518,19 @@ fheroes2::GameMode Game::SelectScenario( const uint8_t humanPlayerCount )
     // We must release UI resources for this window before loading a new map. That's why all UI logic is in a separate function.
     const fheroes2::GameMode result = ChooseNewMap( maps, humanPlayerCount );
     if ( result != fheroes2::GameMode::START_GAME ) {
+        if ( Online::isHost() ) {
+            // The host backed out of the setup: the guests are told and the link is closed.
+            Online::leaveSession( "the host left" );
+        }
+
         return result;
+    }
+
+    if ( Online::isHost() && Settings::Get().IsGameType( Game::TYPE_NETWORK ) ) {
+        // Online game: every player chooses a colour and faction before the map is loaded.
+        if ( !Online::runSeatSelectionAsHost() ) {
+            return fheroes2::GameMode::MAIN_MENU;
+        }
     }
 
     return LoadNewMap();

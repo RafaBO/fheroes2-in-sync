@@ -1083,12 +1083,14 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
                 }
             }
             else {
-                const Online::WaitResult waitResult = Online::hostCollectGuestPlan();
+                const Online::WaitResult waitResult = Online::hostCollectGuestPlans();
 
                 if ( waitResult == Online::WaitResult::DONE ) {
-                    for ( Heroes * hero : world.GetKingdom( Online::remoteColor() ).GetHeroes() ) {
-                        if ( std::find( simultaneousHeroes.begin(), simultaneousHeroes.end(), hero ) == simultaneousHeroes.end() ) {
-                            simultaneousHeroes.push_back( hero );
+                    for ( const PlayerColor remoteColor : Online::remoteColors() ) {
+                        for ( Heroes * hero : world.GetKingdom( remoteColor ).GetHeroes() ) {
+                            if ( std::find( simultaneousHeroes.begin(), simultaneousHeroes.end(), hero ) == simultaneousHeroes.end() ) {
+                                simultaneousHeroes.push_back( hero );
+                            }
                         }
                     }
                 }
