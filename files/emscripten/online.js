@@ -196,8 +196,8 @@
         let slotIndex = -1;
         let introduced = false;
 
-        const refuse = () => {
-            try { conn.send(new Uint8Array([FRAME_REFUSED])); } catch (e) { /* ignore */ }
+        const refuse = reason => {
+            try { conn.send(new Uint8Array([FRAME_REFUSED, reason || 1])); } catch (e) { /* ignore */ }
             setTimeout(() => { try { conn.close(); } catch (e) { /* ignore */ } }, CLOSE_DELAY_MS);
         };
 
@@ -209,13 +209,17 @@
                 const slot = net._slots[index];
                 if (slot.state === 'closed') return refuse();
                 // The same guest coming back: take over, unless the old link is alive and in use.
-                if (slot.state === 'connected' && slot.conn !== conn && Date.now() - slot.lastRx < REPLACE_AFTER_SILENT_MS) return refuse();
+                if (slot.state === 'connected' && slot.conn !== conn && Date.now() - slot.lastRx < REPLACE_AFTER_SILENT_MS) return refuse(2);
                 if (slot.conn && slot.conn !== conn) { try { slot.conn.close(); } catch (e) { /* ignore */ } }
             }
             else {
-                if (net._locked || net._slots.length >= MAX_GUESTS) return refuse();
-                index = net._slots.length;
-                net._slots.push({ clientId, conn: null, state: 'lost', connects: 0, lastRx: 0, partial: new Map() });
+                if (net._locked) return refuse(1);
+                // Before the game starts a slot whose guest is gone can be given to a new guest.
+                index = net._slots.length >= MAX_GUESTS ? net._slots.findIndex(entry => entry.state === 'lost') : -1;
+                if (index < 0 && net._slots.length >= MAX_GUESTS) return refuse(1);
+                const fresh = { clientId, conn: null, state: 'lost', connects: 0, lastRx: 0, partial: new Map() };
+                if (index >= 0) net._slots[index] = fresh;
+                else { index = net._slots.length; net._slots.push(fresh); }
             }
             const slot = net._slots[index];
             slot.conn = conn;
@@ -316,7 +320,9 @@
             else if (frame[0] === FRAME_REFUSED) {
                 stopTimers();
                 net._guestConn = null;
-                fail('The host did not accept you: the room is full or the game has already started.');
+                fail(frame[1] === 2
+                    ? 'You are already connected to this room from another window of this browser.'
+                    : 'The host did not accept you: the room is full, the game has already started, or you were taken out of the game.');
             }
         });
         conn.on('close', () => { if (gen === net._gen && conn === net._guestConn) guestLinkLost(); });
@@ -454,7 +460,7 @@
         entry.conn = null;
         entry.state = 'closed';
         if (conn) {
-            try { conn.send(new Uint8Array([FRAME_REFUSED])); } catch (e) { /* ignore */ }
+            try { conn.send(new Uint8Array([FRAME_REFUSED, 1])); } catch (e) { /* ignore */ }
             setTimeout(() => { try { conn.close(); } catch (e) { /* ignore */ } }, CLOSE_DELAY_MS);
         }
     };

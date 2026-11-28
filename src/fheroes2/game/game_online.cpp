@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -640,6 +641,11 @@ namespace
             return;
         }
 
+        const int validRaces[] = { Race::KNGT, Race::BARB, Race::SORC, Race::WRLK, Race::WZRD, Race::NECR, Race::RAND };
+        if ( std::find( std::begin( validRaces ), std::end( validRaces ), static_cast<int>( race ) ) == std::end( validRaces ) ) {
+            return;
+        }
+
         const bool isSameSeat = table.owner[color] == owner;
         const uint8_t oldRace = table.race[color];
 
@@ -716,6 +722,9 @@ namespace
         }
 
         releaseSeatsOfOwner( seatTable, static_cast<uint8_t>( slot ) );
+
+        // His place is gone: if the same page comes back it is refused.
+        linkDropSlot( slot );
     }
 
     void handleMessageAsHost( const int slot, const Message & message )
@@ -956,6 +965,7 @@ namespace
 
         if ( Player * player = Players::Get( color ); player != nullptr ) {
             player->SetControl( CONTROL_AI );
+            Players::resetHumanColorsCache();
         }
     }
 
@@ -969,6 +979,21 @@ namespace
         }
 
         if ( peerLeft ) {
+            return Online::WaitResult::PEER_LEFT;
+        }
+
+        // A guest the host dropped (or refused) gets a final answer from the page instead of a link that never comes back.
+        const auto isRefused = []() {
+            if ( sessionRole == Online::Role::GUEST && linkState() == Online::Link::FAILED ) {
+                peerLeftMessage = linkText( true );
+                peerLeft = true;
+                return true;
+            }
+
+            return false;
+        };
+
+        if ( isRefused() ) {
             return Online::WaitResult::PEER_LEFT;
         }
 
@@ -994,7 +1019,7 @@ namespace
                 return Online::WaitResult::DONE;
             }
 
-            if ( peerLeft ) {
+            if ( peerLeft || isRefused() ) {
                 return Online::WaitResult::PEER_LEFT;
             }
 
@@ -1118,6 +1143,7 @@ namespace
 
         seatTableChanged = true;
         std::string lastStatus;
+        std::array<std::optional<std::chrono::steady_clock::time_point>, Online::maxGuests> linkDownSince;
 
         // The clicks of this player
         const auto sendMyChoice = [&]( const int color, const uint8_t race, const bool isReady ) {
@@ -1146,6 +1172,27 @@ namespace
 
             if ( !isHost && ( seatTable.isFinal || receivedSnapshotDay > 0 ) ) {
                 return SeatResult::FINISHED;
+            }
+
+            if ( isHost ) {
+                // A guest whose link has been down for a while (closed the page, lost the network) loses his seat, so the others are not kept waiting.
+                const auto now = std::chrono::steady_clock::now();
+                for ( int slot = 0; slot < Online::maxGuests; ++slot ) {
+                    if ( !guestSlots[slot].isActive ) {
+                        continue;
+                    }
+
+                    if ( linkSlotState( slot ) == 1 ) {
+                        linkDownSince[slot].reset();
+                    }
+                    else if ( !linkDownSince[slot].has_value() ) {
+                        linkDownSince[slot] = now;
+                    }
+                    else if ( now - *linkDownSince[slot] > std::chrono::seconds( 20 ) ) {
+                        guestLeaves( slot, "connection lost" );
+                        linkDownSince[slot].reset();
+                    }
+                }
             }
 
             if ( isHost && seatTableChanged ) {
@@ -1179,10 +1226,14 @@ namespace
                     continue;
                 }
 
-                if ( le.MouseClickLeft( colorRects[i] ) || le.MouseClickLeft( raceRects[i] ) ) {
+                // A click is used up when it is read, so each rectangle is asked once.
+                const bool isRaceClicked = le.MouseClickLeft( raceRects[i] );
+                const bool isColorClicked = le.MouseClickLeft( colorRects[i] );
+
+                if ( isColorClicked || isRaceClicked ) {
                     if ( i == mySeat ) {
                         // Own colour: a click on the faction changes it (where the map allows it).
-                        if ( le.MouseClickLeft( raceRects[i] ) && seatTable.canChangeRace[i] ) {
+                        if ( isRaceClicked && seatTable.canChangeRace[i] ) {
                             sendMyChoice( i, static_cast<uint8_t>( Race::getNextRace( seatTable.race[i] ) ), false );
                         }
                     }
@@ -1192,7 +1243,7 @@ namespace
                         sendMyChoice( i, race, false );
                     }
                 }
-                else if ( i == mySeat && seatTable.canChangeRace[i] && le.isMouseRightButtonPressedInArea( raceRects[i] ) ) {
+                else if ( i == mySeat && seatTable.canChangeRace[i] && le.MouseClickRight( raceRects[i] ) ) {
                     sendMyChoice( i, static_cast<uint8_t>( Race::getPreviousRace( seatTable.race[i] ) ), false );
                 }
             }
@@ -1431,6 +1482,7 @@ namespace Online
             if ( guest.hasLeft && guest.color != PlayerColor::NONE ) {
                 if ( Player * player = Players::Get( guest.color ); player != nullptr && player->isControlHuman() ) {
                     player->SetControl( CONTROL_AI );
+                    Players::resetHumanColorsCache();
 
                     std::string text = _( "The %{color} player has left the game. The computer plays this colour from now on." );
                     StringReplace( text, "%{color}", colorName( guest.color ) );

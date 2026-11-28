@@ -280,6 +280,8 @@ public:
     static void SetPlayerControl( const PlayerColor color, const int control );
     static void SetPlayerInGame( const PlayerColor color, const bool isPlay );
     static PlayerColorsSet HumanColors();
+    // Forgets the cached set of human colours (after a player was handed to the computer).
+    static void resetHumanColorsCache();
     // Return current player friends colors, if player does not exist he has no friends (returns 0).
     static PlayerColorsSet FriendColors();
 

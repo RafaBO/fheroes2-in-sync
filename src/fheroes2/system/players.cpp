@@ -488,6 +488,11 @@ void Players::SetStartGame()
     DEBUG_LOG( DBG_GAME, DBG_INFO, String() )
 }
 
+void Players::resetHumanColorsCache()
+{
+    humanColors = 0;
+}
+
 PlayerColorsSet Players::HumanColors()
 {
     if ( humanColors == 0 ) {

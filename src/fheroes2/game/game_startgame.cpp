@@ -759,7 +759,7 @@ fheroes2::GameMode Interface::AdventureMap::StartGame()
         Online::assignColors();
 
         if ( Online::localColor() == PlayerColor::NONE ) {
-            fheroes2::showStandardTextMessage( _( "Online game" ), _( "This map needs exactly two human players for an online game." ), Dialog::OK );
+            fheroes2::showStandardTextMessage( _( "Online game" ), _( "The colours of the players could not be set up for this online game." ), Dialog::OK );
             Online::leaveSession( "wrong map setup" );
             return fheroes2::GameMode::MAIN_MENU;
         }
